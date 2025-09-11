@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Runtime.CompilerServices;
@@ -6,7 +6,52 @@ using System.Runtime.CompilerServices;
 namespace UMAPuwotSharp
 {
     /// <summary>
-    /// Cross-platform C# wrapper for the UMAP dimensionality reduction library based on uwot
+    /// Distance metrics supported by Enhanced UMAP
+    /// </summary>
+    public enum DistanceMetric
+    {
+        /// <summary>
+        /// Euclidean distance (L2 norm) - most common choice for general data
+        /// </summary>
+        Euclidean = 0,
+
+        /// <summary>
+        /// Cosine distance - excellent for high-dimensional sparse data (text, images)
+        /// </summary>
+        Cosine = 1,
+
+        /// <summary>
+        /// Manhattan distance (L1 norm) - robust to outliers
+        /// </summary>
+        Manhattan = 2,
+
+        /// <summary>
+        /// Correlation distance - measures linear relationships, good for time series
+        /// </summary>
+        Correlation = 3,
+
+        /// <summary>
+        /// Hamming distance - for binary or categorical data
+        /// </summary>
+        Hamming = 4
+    }
+
+    /// <summary>
+    /// Progress callback delegate for training progress reporting
+    /// </summary>
+    /// <param name="epoch">Current epoch number</param>
+    /// <param name="totalEpochs">Total number of epochs</param>
+    /// <param name="percent">Progress percentage (0-100)</param>
+    public delegate void ProgressCallback(int epoch, int totalEpochs, float percent);
+
+    /// <summary>
+    /// Enhanced cross-platform C# wrapper for UMAP dimensionality reduction
+    /// Based on the proven uwot R package with enhanced features:
+    /// - Arbitrary embedding dimensions (1D to 50D, including 27D)
+    /// - Multiple distance metrics (Euclidean, Cosine, Manhattan, Correlation, Hamming)
+    /// - Complete model save/load functionality
+    /// - True out-of-sample projection (transform new data)
+    /// - Progress reporting with callback support
     /// </summary>
     public class UMapModel : IDisposable
     {
@@ -18,12 +63,18 @@ namespace UMAPuwotSharp
         private const string WindowsDll = "uwot.dll";
         private const string LinuxDll = "libuwot.so";
 
+        // Native progress callback delegate
+        private delegate void NativeProgressCallback(int epoch, int totalEpochs, float percent);
+
         // Windows P/Invoke declarations
         [DllImport(WindowsDll, CallingConvention = CallingConvention.Cdecl, EntryPoint = "uwot_create")]
         private static extern IntPtr WindowsCreate();
 
         [DllImport(WindowsDll, CallingConvention = CallingConvention.Cdecl, EntryPoint = "uwot_fit")]
-        private static extern int WindowsFit(IntPtr model, float[] data, int nObs, int nDim, int nNeighbors, float minDist, int nEpochs, float[] embedding);
+        private static extern int WindowsFit(IntPtr model, float[] data, int nObs, int nDim, int embeddingDim, int nNeighbors, float minDist, int nEpochs, DistanceMetric metric, float[] embedding);
+
+        [DllImport(WindowsDll, CallingConvention = CallingConvention.Cdecl, EntryPoint = "uwot_fit_with_progress")]
+        private static extern int WindowsFitWithProgress(IntPtr model, float[] data, int nObs, int nDim, int embeddingDim, int nNeighbors, float minDist, int nEpochs, DistanceMetric metric, float[] embedding, NativeProgressCallback progressCallback);
 
         [DllImport(WindowsDll, CallingConvention = CallingConvention.Cdecl, EntryPoint = "uwot_transform")]
         private static extern int WindowsTransform(IntPtr model, float[] newData, int nNewObs, int nDim, float[] embedding);
@@ -41,17 +92,23 @@ namespace UMAPuwotSharp
         private static extern IntPtr WindowsGetErrorMessage(int errorCode);
 
         [DllImport(WindowsDll, CallingConvention = CallingConvention.Cdecl, EntryPoint = "uwot_get_model_info")]
-        private static extern int WindowsGetModelInfo(IntPtr model, out int nVertices, out int nDim, out int embeddingDim, out int nNeighbors, out float minDist);
+        private static extern int WindowsGetModelInfo(IntPtr model, out int nVertices, out int nDim, out int embeddingDim, out int nNeighbors, out float minDist, out DistanceMetric metric);
 
         [DllImport(WindowsDll, CallingConvention = CallingConvention.Cdecl, EntryPoint = "uwot_is_fitted")]
         private static extern int WindowsIsFitted(IntPtr model);
+
+        [DllImport(WindowsDll, CallingConvention = CallingConvention.Cdecl, EntryPoint = "uwot_get_metric_name")]
+        private static extern IntPtr WindowsGetMetricName(DistanceMetric metric);
 
         // Linux P/Invoke declarations
         [DllImport(LinuxDll, CallingConvention = CallingConvention.Cdecl, EntryPoint = "uwot_create")]
         private static extern IntPtr LinuxCreate();
 
         [DllImport(LinuxDll, CallingConvention = CallingConvention.Cdecl, EntryPoint = "uwot_fit")]
-        private static extern int LinuxFit(IntPtr model, float[] data, int nObs, int nDim, int nNeighbors, float minDist, int nEpochs, float[] embedding);
+        private static extern int LinuxFit(IntPtr model, float[] data, int nObs, int nDim, int embeddingDim, int nNeighbors, float minDist, int nEpochs, DistanceMetric metric, float[] embedding);
+
+        [DllImport(LinuxDll, CallingConvention = CallingConvention.Cdecl, EntryPoint = "uwot_fit_with_progress")]
+        private static extern int LinuxFitWithProgress(IntPtr model, float[] data, int nObs, int nDim, int embeddingDim, int nNeighbors, float minDist, int nEpochs, DistanceMetric metric, float[] embedding, NativeProgressCallback progressCallback);
 
         [DllImport(LinuxDll, CallingConvention = CallingConvention.Cdecl, EntryPoint = "uwot_transform")]
         private static extern int LinuxTransform(IntPtr model, float[] newData, int nNewObs, int nDim, float[] embedding);
@@ -69,10 +126,13 @@ namespace UMAPuwotSharp
         private static extern IntPtr LinuxGetErrorMessage(int errorCode);
 
         [DllImport(LinuxDll, CallingConvention = CallingConvention.Cdecl, EntryPoint = "uwot_get_model_info")]
-        private static extern int LinuxGetModelInfo(IntPtr model, out int nVertices, out int nDim, out int embeddingDim, out int nNeighbors, out float minDist);
+        private static extern int LinuxGetModelInfo(IntPtr model, out int nVertices, out int nDim, out int embeddingDim, out int nNeighbors, out float minDist, out DistanceMetric metric);
 
         [DllImport(LinuxDll, CallingConvention = CallingConvention.Cdecl, EntryPoint = "uwot_is_fitted")]
         private static extern int LinuxIsFitted(IntPtr model);
+
+        [DllImport(LinuxDll, CallingConvention = CallingConvention.Cdecl, EntryPoint = "uwot_get_metric_name")]
+        private static extern IntPtr LinuxGetMetricName(DistanceMetric metric);
 
         #endregion
 
@@ -103,7 +163,7 @@ namespace UMAPuwotSharp
         public bool IsFitted => CallIsFitted(_nativeModel) != 0;
 
         /// <summary>
-        /// Gets the model information if fitted
+        /// Gets comprehensive information about the fitted model
         /// </summary>
         public UMapModelInfo ModelInfo
         {
@@ -112,10 +172,10 @@ namespace UMAPuwotSharp
                 if (!IsFitted)
                     throw new InvalidOperationException("Model must be fitted before accessing model info");
 
-                var result = CallGetModelInfo(_nativeModel, out var nVertices, out var nDim, out var embeddingDim, out var nNeighbors, out var minDist);
+                var result = CallGetModelInfo(_nativeModel, out var nVertices, out var nDim, out var embeddingDim, out var nNeighbors, out var minDist, out var metric);
                 ThrowIfError(result);
 
-                return new UMapModelInfo(nVertices, nDim, embeddingDim, nNeighbors, minDist);
+                return new UMapModelInfo(nVertices, nDim, embeddingDim, nNeighbors, minDist, metric);
             }
         }
 
@@ -124,17 +184,17 @@ namespace UMAPuwotSharp
         #region Constructors
 
         /// <summary>
-        /// Creates a new UMAP model instance
+        /// Creates a new Enhanced UMAP model instance
         /// </summary>
         public UMapModel()
         {
             _nativeModel = CallCreate();
             if (_nativeModel == IntPtr.Zero)
-                throw new OutOfMemoryException("Failed to create UMAP model");
+                throw new OutOfMemoryException("Failed to create Enhanced UMAP model");
         }
 
         /// <summary>
-        /// Loads a UMAP model from a file
+        /// Loads an Enhanced UMAP model from a file
         /// </summary>
         /// <param name="filename">Path to the model file</param>
         /// <returns>A new UMapModel instance loaded from the specified file</returns>
@@ -166,61 +226,59 @@ namespace UMAPuwotSharp
         #region Public Methods
 
         /// <summary>
-        /// Fits the UMAP model to training data
+        /// Fits the Enhanced UMAP model to training data with full customization
         /// </summary>
         /// <param name="data">Training data as 2D array [samples, features]</param>
+        /// <param name="embeddingDimension">Target embedding dimension (1-50, default: 2). Supports 27D!</param>
         /// <param name="nNeighbors">Number of nearest neighbors (default: 15)</param>
         /// <param name="minDist">Minimum distance between points in embedding (default: 0.1)</param>
-        /// <param name="nEpochs">Number of optimization epochs (default: 200)</param>
-        /// <returns>2D embedding coordinates [samples, 2]</returns>
+        /// <param name="nEpochs">Number of optimization epochs (default: 300)</param>
+        /// <param name="metric">Distance metric to use (default: Euclidean)</param>
+        /// <returns>Embedding coordinates [samples, embeddingDimension]</returns>
         /// <exception cref="ArgumentNullException">Thrown when data is null</exception>
         /// <exception cref="ArgumentException">Thrown when parameters are invalid</exception>
-        public float[,] Fit(float[,] data, int nNeighbors = 15, float minDist = 0.1f, int nEpochs = 200)
+        public float[,] Fit(float[,] data,
+                          int embeddingDimension = 2,
+                          int nNeighbors = 15,
+                          float minDist = 0.1f,
+                          int nEpochs = 300,
+                          DistanceMetric metric = DistanceMetric.Euclidean)
         {
-            if (data == null)
-                throw new ArgumentNullException(nameof(data));
-
-            var nSamples = data.GetLength(0);
-            var nFeatures = data.GetLength(1);
-
-            if (nSamples <= 0 || nFeatures <= 0)
-                throw new ArgumentException("Data must have positive dimensions");
-
-            if (nNeighbors <= 0 || nNeighbors >= nSamples)
-                throw new ArgumentException("Number of neighbors must be positive and less than number of samples");
-
-            if (minDist <= 0)
-                throw new ArgumentException("Minimum distance must be positive");
-
-            if (nEpochs <= 0)
-                throw new ArgumentException("Number of epochs must be positive");
-
-            // Flatten the input data
-            var flatData = new float[nSamples * nFeatures];
-            for (int i = 0; i < nSamples; i++)
-            {
-                for (int j = 0; j < nFeatures; j++)
-                {
-                    flatData[i * nFeatures + j] = data[i, j];
-                }
-            }
-
-            // Prepare output array
-            var embedding = new float[nSamples * 2];
-
-            // Call native function
-            var result = CallFit(_nativeModel, flatData, nSamples, nFeatures, nNeighbors, minDist, nEpochs, embedding);
-            ThrowIfError(result);
-
-            // Convert back to 2D array
-            return ConvertTo2D(embedding, nSamples, 2);
+            return FitInternal(data, embeddingDimension, nNeighbors, minDist, nEpochs, metric, null);
         }
 
         /// <summary>
-        /// Transforms new data using a fitted model
+        /// Fits the Enhanced UMAP model to training data with progress reporting
+        /// </summary>
+        /// <param name="data">Training data as 2D array [samples, features]</param>
+        /// <param name="progressCallback">Callback function to report training progress</param>
+        /// <param name="embeddingDimension">Target embedding dimension (1-50, default: 2). Supports 27D!</param>
+        /// <param name="nNeighbors">Number of nearest neighbors (default: 15)</param>
+        /// <param name="minDist">Minimum distance between points in embedding (default: 0.1)</param>
+        /// <param name="nEpochs">Number of optimization epochs (default: 300)</param>
+        /// <param name="metric">Distance metric to use (default: Euclidean)</param>
+        /// <returns>Embedding coordinates [samples, embeddingDimension]</returns>
+        /// <exception cref="ArgumentNullException">Thrown when data or progressCallback is null</exception>
+        /// <exception cref="ArgumentException">Thrown when parameters are invalid</exception>
+        public float[,] FitWithProgress(float[,] data,
+                                      ProgressCallback progressCallback,
+                                      int embeddingDimension = 2,
+                                      int nNeighbors = 15,
+                                      float minDist = 0.1f,
+                                      int nEpochs = 300,
+                                      DistanceMetric metric = DistanceMetric.Euclidean)
+        {
+            if (progressCallback == null)
+                throw new ArgumentNullException(nameof(progressCallback));
+
+            return FitInternal(data, embeddingDimension, nNeighbors, minDist, nEpochs, metric, progressCallback);
+        }
+
+        /// <summary>
+        /// Transforms new data using a fitted model (out-of-sample projection)
         /// </summary>
         /// <param name="newData">New data to transform [samples, features]</param>
-        /// <returns>2D embedding coordinates [samples, 2]</returns>
+        /// <returns>Embedding coordinates [samples, embeddingDimension]</returns>
         /// <exception cref="ArgumentNullException">Thrown when newData is null</exception>
         /// <exception cref="InvalidOperationException">Thrown when model is not fitted</exception>
         /// <exception cref="ArgumentException">Thrown when feature dimensions don't match training data</exception>
@@ -254,14 +312,14 @@ namespace UMAPuwotSharp
             }
 
             // Prepare output array
-            var embedding = new float[nNewSamples * 2];
+            var embedding = new float[nNewSamples * modelInfo.OutputDimension];
 
             // Call native function
             var result = CallTransform(_nativeModel, flatNewData, nNewSamples, nFeatures, embedding);
             ThrowIfError(result);
 
             // Convert back to 2D array
-            return ConvertTo2D(embedding, nNewSamples, 2);
+            return ConvertTo2D(embedding, nNewSamples, modelInfo.OutputDimension);
         }
 
         /// <summary>
@@ -288,6 +346,93 @@ namespace UMAPuwotSharp
             ThrowIfError(result);
         }
 
+        /// <summary>
+        /// Gets the human-readable name of a distance metric
+        /// </summary>
+        /// <param name="metric">The distance metric</param>
+        /// <returns>Human-readable name of the metric</returns>
+        public static string GetMetricName(DistanceMetric metric)
+        {
+            var ptr = CallGetMetricName(metric);
+            return Marshal.PtrToStringAnsi(ptr) ?? "Unknown";
+        }
+
+        #endregion
+
+        #region Private Methods
+
+        private float[,] FitInternal(float[,] data,
+                                   int embeddingDimension,
+                                   int nNeighbors,
+                                   float minDist,
+                                   int nEpochs,
+                                   DistanceMetric metric,
+                                   ProgressCallback progressCallback)
+        {
+            if (data == null)
+                throw new ArgumentNullException(nameof(data));
+
+            var nSamples = data.GetLength(0);
+            var nFeatures = data.GetLength(1);
+
+            if (nSamples <= 0 || nFeatures <= 0)
+                throw new ArgumentException("Data must have positive dimensions");
+
+            if (embeddingDimension <= 0 || embeddingDimension > 50)
+                throw new ArgumentException("Embedding dimension must be between 1 and 50 (includes 27D support)");
+
+            if (nNeighbors <= 0 || nNeighbors >= nSamples)
+                throw new ArgumentException("Number of neighbors must be positive and less than number of samples");
+
+            if (minDist <= 0)
+                throw new ArgumentException("Minimum distance must be positive");
+
+            if (nEpochs <= 0)
+                throw new ArgumentException("Number of epochs must be positive");
+
+            // Flatten the input data
+            var flatData = new float[nSamples * nFeatures];
+            for (int i = 0; i < nSamples; i++)
+            {
+                for (int j = 0; j < nFeatures; j++)
+                {
+                    flatData[i * nFeatures + j] = data[i, j];
+                }
+            }
+
+            // Prepare output array
+            var embedding = new float[nSamples * embeddingDimension];
+
+            // Call appropriate native function
+            int result;
+            if (progressCallback != null)
+            {
+                // Create native callback wrapper
+                NativeProgressCallback nativeCallback = (epoch, totalEpochs, percent) =>
+                {
+                    try
+                    {
+                        progressCallback(epoch, totalEpochs, percent);
+                    }
+                    catch
+                    {
+                        // Ignore exceptions in callback to prevent native crashes
+                    }
+                };
+
+                result = CallFitWithProgress(_nativeModel, flatData, nSamples, nFeatures, embeddingDimension, nNeighbors, minDist, nEpochs, metric, embedding, nativeCallback);
+            }
+            else
+            {
+                result = CallFit(_nativeModel, flatData, nSamples, nFeatures, embeddingDimension, nNeighbors, minDist, nEpochs, metric, embedding);
+            }
+
+            ThrowIfError(result);
+
+            // Convert back to 2D array
+            return ConvertTo2D(embedding, nSamples, embeddingDimension);
+        }
+
         #endregion
 
         #region Private Platform-Specific Wrappers
@@ -299,10 +444,17 @@ namespace UMAPuwotSharp
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static int CallFit(IntPtr model, float[] data, int nObs, int nDim, int nNeighbors, float minDist, int nEpochs, float[] embedding)
+        private static int CallFit(IntPtr model, float[] data, int nObs, int nDim, int embeddingDim, int nNeighbors, float minDist, int nEpochs, DistanceMetric metric, float[] embedding)
         {
-            return IsWindows ? WindowsFit(model, data, nObs, nDim, nNeighbors, minDist, nEpochs, embedding)
-                             : LinuxFit(model, data, nObs, nDim, nNeighbors, minDist, nEpochs, embedding);
+            return IsWindows ? WindowsFit(model, data, nObs, nDim, embeddingDim, nNeighbors, minDist, nEpochs, metric, embedding)
+                             : LinuxFit(model, data, nObs, nDim, embeddingDim, nNeighbors, minDist, nEpochs, metric, embedding);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static int CallFitWithProgress(IntPtr model, float[] data, int nObs, int nDim, int embeddingDim, int nNeighbors, float minDist, int nEpochs, DistanceMetric metric, float[] embedding, NativeProgressCallback progressCallback)
+        {
+            return IsWindows ? WindowsFitWithProgress(model, data, nObs, nDim, embeddingDim, nNeighbors, minDist, nEpochs, metric, embedding, progressCallback)
+                             : LinuxFitWithProgress(model, data, nObs, nDim, embeddingDim, nNeighbors, minDist, nEpochs, metric, embedding, progressCallback);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -339,16 +491,22 @@ namespace UMAPuwotSharp
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static int CallGetModelInfo(IntPtr model, out int nVertices, out int nDim, out int embeddingDim, out int nNeighbors, out float minDist)
+        private static int CallGetModelInfo(IntPtr model, out int nVertices, out int nDim, out int embeddingDim, out int nNeighbors, out float minDist, out DistanceMetric metric)
         {
-            return IsWindows ? WindowsGetModelInfo(model, out nVertices, out nDim, out embeddingDim, out nNeighbors, out minDist)
-                             : LinuxGetModelInfo(model, out nVertices, out nDim, out embeddingDim, out nNeighbors, out minDist);
+            return IsWindows ? WindowsGetModelInfo(model, out nVertices, out nDim, out embeddingDim, out nNeighbors, out minDist, out metric)
+                             : LinuxGetModelInfo(model, out nVertices, out nDim, out embeddingDim, out nNeighbors, out minDist, out metric);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static int CallIsFitted(IntPtr model)
         {
             return IsWindows ? WindowsIsFitted(model) : LinuxIsFitted(model);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static IntPtr CallGetMetricName(DistanceMetric metric)
+        {
+            return IsWindows ? WindowsGetMetricName(metric) : LinuxGetMetricName(metric);
         }
 
         #endregion
@@ -425,7 +583,7 @@ namespace UMAPuwotSharp
     }
 
     /// <summary>
-    /// Information about a fitted UMAP model
+    /// Comprehensive information about a fitted Enhanced UMAP model
     /// </summary>
     public readonly struct UMapModelInfo
     {
@@ -440,7 +598,7 @@ namespace UMAPuwotSharp
         public int InputDimension { get; }
 
         /// <summary>
-        /// Gets the dimensionality of the output embedding (typically 2)
+        /// Gets the dimensionality of the output embedding (1-50D supported, including 27D)
         /// </summary>
         public int OutputDimension { get; }
 
@@ -454,22 +612,33 @@ namespace UMAPuwotSharp
         /// </summary>
         public float MinimumDistance { get; }
 
-        internal UMapModelInfo(int trainingSamples, int inputDimension, int outputDimension, int neighbors, float minimumDistance)
+        /// <summary>
+        /// Gets the distance metric used during training
+        /// </summary>
+        public DistanceMetric Metric { get; }
+
+        /// <summary>
+        /// Gets the human-readable name of the distance metric
+        /// </summary>
+        public string MetricName => UMapModel.GetMetricName(Metric);
+
+        internal UMapModelInfo(int trainingSamples, int inputDimension, int outputDimension, int neighbors, float minimumDistance, DistanceMetric metric)
         {
             TrainingSamples = trainingSamples;
             InputDimension = inputDimension;
             OutputDimension = outputDimension;
             Neighbors = neighbors;
             MinimumDistance = minimumDistance;
+            Metric = metric;
         }
 
         /// <summary>
-        /// Returns a string representation of the model information
+        /// Returns a comprehensive string representation of the model information
         /// </summary>
-        /// <returns>A formatted string describing the model parameters</returns>
+        /// <returns>A formatted string describing all model parameters</returns>
         public override string ToString()
         {
-            return $"UMAP Model: {TrainingSamples} samples, {InputDimension}D ? {OutputDimension}D, k={Neighbors}, min_dist={MinimumDistance:F3}";
+            return $"Enhanced UMAP Model: {TrainingSamples} samples, {InputDimension}D → {OutputDimension}D, k={Neighbors}, min_dist={MinimumDistance:F3}, metric={MetricName}";
         }
     }
 }

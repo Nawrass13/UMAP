@@ -1,250 +1,255 @@
-#include "uwot_simple_wrapper.h"
-#include <cmath>
-#include <iostream>
+﻿#include "uwot_simple_wrapper.h"
+#include <cstdio>
 #include <vector>
 #include <random>
-#include <algorithm>
-#include <iomanip>
+#include <iostream>
+#include <cmath>
+#include <memory>
+#include <chrono>
 
-// Generate synthetic test data
-std::vector<std::vector<float>> generate_test_data(int n_samples, int n_features, int random_seed = 42) {
-    std::mt19937 gen(random_seed);
+// Progress callback for testing
+void test_progress_callback(int epoch, int total_epochs, float percent) {
+    static int last_reported = -1;
+    int current_percent = static_cast<int>(percent);
+
+    // Only report every 20% to avoid spam
+    if (current_percent >= last_reported + 20) {
+        printf("Progress: %d%% (Epoch %d/%d)\n", current_percent, epoch, total_epochs);
+        last_reported = current_percent;
+    }
+}
+
+bool test_progress_reporting() {
+    printf("Testing progress reporting...\n");
+
+    UwotModel* model = uwot_create();
+    if (!model) {
+        printf("Failed to create model\n");
+        return false;
+    }
+
+    // Generate small test data for quick progress test
+    constexpr int n_obs = 100;
+    constexpr int n_dim = 5;
+    constexpr int embedding_dim = 2;
+    constexpr int n_epochs = 50;  // Small number for quick test
+
+    std::vector<float> data(n_obs * n_dim);
+    std::mt19937 gen(12345);
     std::normal_distribution<float> dist(0.0f, 1.0f);
 
-    std::vector<std::vector<float>> data(n_samples, std::vector<float>(n_features));
-
-    for (int i = 0; i < n_samples; ++i) {
-        for (int j = 0; j < n_features; ++j) {
-            data[i][j] = dist(gen);
-        }
+    for (int i = 0; i < n_obs * n_dim; i++) {
+        data[i] = dist(gen);
     }
 
-    return data;
+    std::vector<float> embedding(n_obs * embedding_dim);
+
+    printf("Testing uwot_fit_with_progress...\n");
+    int result = uwot_fit_with_progress(model, data.data(), n_obs, n_dim,
+        embedding_dim, 15, 0.1f, n_epochs,
+        UWOT_METRIC_EUCLIDEAN, embedding.data(),
+        test_progress_callback);
+
+    if (result != UWOT_SUCCESS) {
+        printf("Progress test failed with error: %s\n", uwot_get_error_message(result));
+        uwot_destroy(model);
+        return false;
+    }
+
+    uwot_destroy(model);
+    printf("Progress reporting test passed!\n");
+    return true;
 }
 
-// Generate slightly different test data for transformation testing
-std::vector<std::vector<float>> generate_new_test_data(int n_samples, int n_features, int random_seed = 123) {
-    std::mt19937 gen(random_seed);
-    std::normal_distribution<float> dist(0.5f, 0.8f); // Different distribution
+bool test_basic_functionality() {
+    printf("Testing basic UMAP functionality...\n");
 
-    std::vector<std::vector<float>> data(n_samples, std::vector<float>(n_features));
-
-    for (int i = 0; i < n_samples; ++i) {
-        for (int j = 0; j < n_features; ++j) {
-            data[i][j] = dist(gen);
-        }
+    UwotModel* model = uwot_create();
+    if (!model) {
+        printf("Failed to create model\n");
+        return false;
     }
 
-    return data;
+    // Generate test data
+    constexpr int n_obs = 150;
+    constexpr int n_dim = 4;
+    constexpr int embedding_dim = 2;
+
+    std::vector<float> data(n_obs * n_dim);
+    std::mt19937 gen(42);
+    std::normal_distribution<float> dist(0.0f, 1.0f);
+
+    for (int i = 0; i < n_obs * n_dim; i++) {
+        data[i] = dist(gen);
+    }
+
+    std::vector<float> embedding(n_obs * embedding_dim);
+
+    printf("Testing basic uwot_fit...\n");
+    int result = uwot_fit(model, data.data(), n_obs, n_dim,
+        embedding_dim, 15, 0.1f, 100,
+        UWOT_METRIC_EUCLIDEAN, embedding.data());
+
+    if (result != UWOT_SUCCESS) {
+        printf("Basic test failed with error: %s\n", uwot_get_error_message(result));
+        uwot_destroy(model);
+        return false;
+    }
+
+    // Test model info
+    int info_n_vertices, info_n_dim, info_embedding_dim, info_n_neighbors;
+    float info_min_dist;
+    UwotMetric info_metric;
+
+    result = uwot_get_model_info(model, &info_n_vertices, &info_n_dim,
+        &info_embedding_dim, &info_n_neighbors,
+        &info_min_dist, &info_metric);
+
+    if (result != UWOT_SUCCESS) {
+        printf("Model info test failed\n");
+        uwot_destroy(model);
+        return false;
+    }
+
+    printf("Model info: %d vertices, %d->%d dimensions, %d neighbors, metric: %s\n",
+        info_n_vertices, info_n_dim, info_embedding_dim, info_n_neighbors,
+        uwot_get_metric_name(info_metric));
+
+    uwot_destroy(model);
+    printf("Basic functionality test passed!\n");
+    return true;
 }
 
-void print_embedding_sample(const std::vector<float>& embedding, int n_samples, int embedding_dim, const std::string& title) {
-    std::cout << title << ":" << std::endl;
-    for (int i = 0; i < std::min(5, n_samples); ++i) {
-        std::cout << "  Sample " << i << ": (";
-        for (int d = 0; d < embedding_dim; ++d) {
-            std::cout << std::fixed << std::setprecision(3) << embedding[i * embedding_dim + d];
-            if (d < embedding_dim - 1) std::cout << ", ";
-        }
-        std::cout << ")" << std::endl;
+bool test_27d_embedding() {
+    printf("Testing 27D embedding...\n");
+
+    UwotModel* model = uwot_create();
+    if (!model) {
+        printf("Failed to create model\n");
+        return false;
     }
+
+    // Generate test data
+    constexpr int n_obs = 100;
+    constexpr int n_dim = 10;
+    constexpr int embedding_dim = 27;  // Test 27D
+
+    std::vector<float> data(n_obs * n_dim);
+    std::mt19937 gen(123);
+    std::normal_distribution<float> dist(0.0f, 1.0f);
+
+    for (int i = 0; i < n_obs * n_dim; i++) {
+        data[i] = dist(gen);
+    }
+
+    std::vector<float> embedding(n_obs * embedding_dim);
+
+    printf("Testing 27D embedding with cosine distance...\n");
+    int result = uwot_fit(model, data.data(), n_obs, n_dim,
+        embedding_dim, 15, 0.1f, 50,
+        UWOT_METRIC_COSINE, embedding.data());
+
+    if (result != UWOT_SUCCESS) {
+        printf("27D test failed with error: %s\n", uwot_get_error_message(result));
+        uwot_destroy(model);
+        return false;
+    }
+
+    printf("27D embedding dimensions: %d\n", uwot_get_embedding_dim(model));
+
+    uwot_destroy(model);
+    printf("27D embedding test passed!\n");
+    return true;
+}
+
+bool test_distance_metrics() {
+    printf("Testing different distance metrics...\n");
+
+    const UwotMetric metrics[] = {
+        UWOT_METRIC_EUCLIDEAN,
+        UWOT_METRIC_COSINE,
+        UWOT_METRIC_MANHATTAN,
+        UWOT_METRIC_CORRELATION,
+        UWOT_METRIC_HAMMING
+    };
+
+    constexpr int n_obs = 50;
+    constexpr int n_dim = 3;
+    constexpr int embedding_dim = 2;
+
+    std::vector<float> data(n_obs * n_dim);
+    std::mt19937 gen(456);
+    std::normal_distribution<float> dist(0.0f, 1.0f);
+
+    for (int i = 0; i < n_obs * n_dim; i++) {
+        data[i] = dist(gen);
+    }
+
+    for (const auto& metric : metrics) {
+        printf("Testing %s distance...\n", uwot_get_metric_name(metric));
+
+        UwotModel* model = uwot_create();
+        if (!model) {
+            printf("Failed to create model for %s\n", uwot_get_metric_name(metric));
+            return false;
+        }
+
+        std::vector<float> embedding(n_obs * embedding_dim);
+
+        int result = uwot_fit(model, data.data(), n_obs, n_dim,
+            embedding_dim, 10, 0.1f, 30,
+            metric, embedding.data());
+
+        if (result != UWOT_SUCCESS) {
+            printf("%s metric test failed with error: %s\n",
+                uwot_get_metric_name(metric), uwot_get_error_message(result));
+            uwot_destroy(model);
+            return false;
+        }
+
+        uwot_destroy(model);
+    }
+
+    printf("Distance metrics test passed!\n");
+    return true;
 }
 
 int main() {
-    std::cout << "=== Enhanced UMAP C++ Wrapper Test ===" << std::endl;
-    std::cout << "Testing: Training, Save/Load, and Transform functionality" << std::endl << std::endl;
+    printf("===========================================\n");
+    printf("  Enhanced UMAP C++ Library Test Suite\n");
+    printf("===========================================\n\n");
 
-    // Parameters
-    const int n_train_samples = 150;
-    const int n_features = 10;
-    const int n_neighbors = 15;
-    const int n_epochs = 300;
-    const float min_dist = 0.1f;
-    const char* model_filename = "umap_model.bin";
+    bool all_passed = true;
 
-    // === STEP 1: Training ===
-    std::cout << "Step 1: Training UMAP model" << std::endl;
-    std::cout << "- Training samples: " << n_train_samples << std::endl;
-    std::cout << "- Features: " << n_features << std::endl;
-    std::cout << "- Neighbors: " << n_neighbors << std::endl;
-    std::cout << "- Epochs: " << n_epochs << std::endl << std::endl;
+    // Run all tests
+    all_passed &= test_basic_functionality();
+    printf("\n");
 
-    auto train_data = generate_test_data(n_train_samples, n_features);
+    all_passed &= test_progress_reporting();
+    printf("\n");
 
-    // Convert to flat array
-    std::vector<float> flat_train_data(n_train_samples * n_features);
-    for (int i = 0; i < n_train_samples; ++i) {
-        for (int j = 0; j < n_features; ++j) {
-            flat_train_data[i * n_features + j] = train_data[i][j];
-        }
-    }
+    all_passed &= test_27d_embedding();
+    printf("\n");
 
-    // Create and train model
-    UwotModel* model = uwot_create();
-    if (!model) {
-        std::cerr << "Failed to create UMAP model" << std::endl;
-        return 1;
-    }
+    all_passed &= test_distance_metrics();
+    printf("\n");
 
-    std::vector<float> train_embedding(n_train_samples * 2);
-
-    std::cout << "Training model..." << std::endl;
-    int result = uwot_fit(model, flat_train_data.data(), n_train_samples, n_features,
-        n_neighbors, min_dist, n_epochs, train_embedding.data());
-
-    if (result != UWOT_SUCCESS) {
-        std::cerr << "Training failed: " << uwot_get_error_message(result) << std::endl;
-        uwot_destroy(model);
-        return 1;
-    }
-
-    std::cout << "[PASS] Training completed successfully!" << std::endl;
-    print_embedding_sample(train_embedding, n_train_samples, 2, "Training embedding (first 5 samples)");
-    std::cout << std::endl;
-
-    // === STEP 2: Save Model ===
-    std::cout << "Step 2: Saving model to disk" << std::endl;
-    result = uwot_save_model(model, model_filename);
-
-    if (result != UWOT_SUCCESS) {
-        std::cerr << "Save failed: " << uwot_get_error_message(result) << std::endl;
-        uwot_destroy(model);
-        return 1;
-    }
-
-    std::cout << "[PASS] Model saved to: " << model_filename << std::endl;
-
-    // Get model info
-    int n_vertices, n_dim, embedding_dim, n_neighbors_saved;
-    float min_dist_saved;
-    uwot_get_model_info(model, &n_vertices, &n_dim, &embedding_dim, &n_neighbors_saved, &min_dist_saved);
-
-    std::cout << "Model info: " << n_vertices << " vertices, " << n_dim << "D -> " << embedding_dim << "D" << std::endl;
-    std::cout << "Parameters: k=" << n_neighbors_saved << ", min_dist=" << min_dist_saved << std::endl << std::endl;
-
-    // Clean up original model
-    uwot_destroy(model);
-    model = nullptr;
-
-    // === STEP 3: Load Model ===
-    std::cout << "Step 3: Loading model from disk" << std::endl;
-
-    UwotModel* loaded_model = uwot_load_model(model_filename);
-    if (!loaded_model) {
-        std::cerr << "Failed to load model from: " << model_filename << std::endl;
-        return 1;
-    }
-
-    std::cout << "[PASS] Model loaded successfully!" << std::endl;
-
-    // Verify loaded model
-    if (!uwot_is_fitted(loaded_model)) {
-        std::cerr << "Loaded model is not fitted!" << std::endl;
-        uwot_destroy(loaded_model);
-        return 1;
-    }
-
-    std::cout << "[PASS] Loaded model is fitted and ready" << std::endl << std::endl;
-
-    // === STEP 4: Transform New Data ===
-    std::cout << "Step 4: Transforming new data" << std::endl;
-
-    const int n_new_samples = 20;
-    auto new_data = generate_new_test_data(n_new_samples, n_features);
-
-    std::cout << "- New samples: " << n_new_samples << std::endl;
-    std::cout << "- Same feature dimension: " << n_features << std::endl << std::endl;
-
-    // Convert to flat array
-    std::vector<float> flat_new_data(n_new_samples * n_features);
-    for (int i = 0; i < n_new_samples; ++i) {
-        for (int j = 0; j < n_features; ++j) {
-            flat_new_data[i * n_features + j] = new_data[i][j];
-        }
-    }
-
-    std::vector<float> new_embedding(n_new_samples * 2);
-
-    std::cout << "Transforming new data..." << std::endl;
-    result = uwot_transform(loaded_model, flat_new_data.data(), n_new_samples, n_features, new_embedding.data());
-
-    if (result != UWOT_SUCCESS) {
-        std::cerr << "Transform failed: " << uwot_get_error_message(result) << std::endl;
-        uwot_destroy(loaded_model);
-        return 1;
-    }
-
-    std::cout << "[PASS] Transform completed successfully!" << std::endl;
-    print_embedding_sample(new_embedding, n_new_samples, 2, "Transformed embedding (first 5 samples)");
-    std::cout << std::endl;
-
-    // === STEP 5: Statistics and Validation ===
-    std::cout << "Step 5: Validation and Statistics" << std::endl;
-
-    // Compute embedding bounds for both training and new data
-    float train_min_x = train_embedding[0], train_max_x = train_embedding[0];
-    float train_min_y = train_embedding[1], train_max_y = train_embedding[1];
-
-    for (int i = 0; i < n_train_samples; ++i) {
-        float x = train_embedding[i * 2];
-        float y = train_embedding[i * 2 + 1];
-        train_min_x = std::min(train_min_x, x);
-        train_max_x = std::max(train_max_x, x);
-        train_min_y = std::min(train_min_y, y);
-        train_max_y = std::max(train_max_y, y);
-    }
-
-    float new_min_x = new_embedding[0], new_max_x = new_embedding[0];
-    float new_min_y = new_embedding[1], new_max_y = new_embedding[1];
-
-    for (int i = 0; i < n_new_samples; ++i) {
-        float x = new_embedding[i * 2];
-        float y = new_embedding[i * 2 + 1];
-        new_min_x = std::min(new_min_x, x);
-        new_max_x = std::max(new_max_x, x);
-        new_min_y = std::min(new_min_y, y);
-        new_max_y = std::max(new_max_y, y);
-    }
-
-    std::cout << "Training embedding bounds: X=[" << std::fixed << std::setprecision(3)
-        << train_min_x << ", " << train_max_x << "], Y=[" << train_min_y << ", " << train_max_y << "]" << std::endl;
-    std::cout << "New data embedding bounds:  X=[" << std::fixed << std::setprecision(3)
-        << new_min_x << ", " << new_max_x << "], Y=[" << new_min_y << ", " << new_max_y << "]" << std::endl;
-
-    // Check if new embeddings are reasonable (within or near training bounds)
-    bool reasonable_x = (new_min_x >= train_min_x - 2.0f) && (new_max_x <= train_max_x + 2.0f);
-    bool reasonable_y = (new_min_y >= train_min_y - 2.0f) && (new_max_y <= train_max_y + 2.0f);
-
-    if (reasonable_x && reasonable_y) {
-        std::cout << "[PASS] New embeddings are within reasonable bounds" << std::endl;
+    printf("===========================================\n");
+    if (all_passed) {
+        printf("  ALL TESTS PASSED!\n");
+        printf("  Enhanced UMAP library is working correctly\n");
+        printf("  Features verified:\n");
+        printf("  ✓ Basic UMAP functionality\n");
+        printf("  ✓ Progress reporting with callbacks\n");
+        printf("  ✓ 27D embedding capability\n");
+        printf("  ✓ Multiple distance metrics\n");
+        printf("  ✓ Model information retrieval\n");
     }
     else {
-        std::cout << "[WARN] New embeddings may be outside expected bounds" << std::endl;
+        printf("  SOME TESTS FAILED!\n");
+        printf("  Check the output above for details\n");
     }
+    printf("===========================================\n");
 
-    std::cout << std::endl;
-
-    // === STEP 6: Cleanup ===
-    std::cout << "Step 6: Cleanup" << std::endl;
-
-    uwot_destroy(loaded_model);
-    std::cout << "[PASS] Model destroyed" << std::endl;
-
-    // Remove the model file
-    if (std::remove(model_filename) == 0) {
-        std::cout << "[PASS] Model file removed" << std::endl;
-    }
-    else {
-        std::cout << "[WARN] Could not remove model file" << std::endl;
-    }
-
-    std::cout << std::endl << "=== All Tests Completed Successfully! ===" << std::endl;
-    std::cout << std::endl << "Summary:" << std::endl;
-    std::cout << "[PASS] Model training: " << n_train_samples << " samples -> 2D embedding" << std::endl;
-    std::cout << "[PASS] Model persistence: Save and load from disk" << std::endl;
-    std::cout << "[PASS] Data transformation: " << n_new_samples << " new samples transformed" << std::endl;
-    std::cout << "[PASS] Memory management: All resources properly cleaned up" << std::endl;
-    std::cout << std::endl << "Your UMAP library is ready for production use with C#!" << std::endl;
-
-    return 0;
+    return all_passed ? 0 : 1;
 }

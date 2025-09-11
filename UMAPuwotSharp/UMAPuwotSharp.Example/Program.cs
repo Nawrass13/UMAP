@@ -2,187 +2,427 @@ using System;
 using System.IO;
 using UMAPuwotSharp;
 
-namespace UMAPuwotSharp.Example
+namespace UMAPExample
 {
-    class Program
+    class CompleteUsageDemo
     {
         static void Main(string[] args)
         {
+            Console.WriteLine("=== Complete Enhanced UMAP Wrapper Demo ===\n");
+
             try
             {
-                Console.WriteLine("=== UMAPuwotSharp C# Wrapper Example ===");
-                Console.WriteLine();
+                // Demo 1: 27D Embedding with Progress Reporting
+                Demo27DEmbeddingWithProgress();
 
-                // Generate sample data
-                var trainData = GenerateTestData(100, 10, seed: 42);
-                var newData = GenerateTestData(20, 10, seed: 123);
+                // Demo 2: Multi-Dimensional Embeddings (1D to 50D)
+                DemoMultiDimensionalEmbeddings();
 
-                Console.WriteLine($"Generated training data: {trainData.GetLength(0)} samples, {trainData.GetLength(1)} features");
-                Console.WriteLine($"Generated new data: {newData.GetLength(0)} samples, {newData.GetLength(1)} features");
-                Console.WriteLine();
+                // Demo 3: Model Persistence and Transform
+                DemoModelPersistence();
 
-                // === TRAINING AND EMBEDDING ===
-                Console.WriteLine("Step 1: Training UMAP model...");
-                
-                using var model = new UMapModel();
-                var embedding = model.Fit(trainData, nNeighbors: 15, minDist: 0.1f, nEpochs: 200);
-                
-                Console.WriteLine($"✓ Training completed! Embedding shape: [{embedding.GetLength(0)}, {embedding.GetLength(1)}]");
-                Console.WriteLine($"Model info: {model.ModelInfo}");
-                Console.WriteLine();
+                // Demo 4: Different Data Types and Metrics with Progress
+                DemoDistanceMetricsWithProgress();
 
-                // Print first few embedding coordinates
-                Console.WriteLine("First 5 training embeddings:");
-                for (int i = 0; i < Math.Min(5, embedding.GetLength(0)); i++)
-                {
-                    Console.WriteLine($"  Sample {i}: ({embedding[i, 0]:F3}, {embedding[i, 1]:F3})");
-                }
-                Console.WriteLine();
-
-                // === SAVE MODEL ===
-                Console.WriteLine("Step 2: Saving model...");
-                
-                const string modelPath = "umap_model_csharp.bin";
-                model.Save(modelPath);
-                
-                Console.WriteLine($"✓ Model saved to: {modelPath}");
-                Console.WriteLine($"File size: {new FileInfo(modelPath).Length} bytes");
-                Console.WriteLine();
-
-                // === LOAD MODEL ===
-                Console.WriteLine("Step 3: Loading model...");
-                
-                using var loadedModel = UMapModel.Load(modelPath);
-                Console.WriteLine($"✓ Model loaded successfully!");
-                Console.WriteLine($"Loaded model info: {loadedModel.ModelInfo}");
-                Console.WriteLine();
-
-                // === TRANSFORM NEW DATA ===
-                Console.WriteLine("Step 4: Transforming new data...");
-                
-                var newEmbedding = loadedModel.Transform(newData);
-                
-                Console.WriteLine($"✓ Transform completed! New embedding shape: [{newEmbedding.GetLength(0)}, {newEmbedding.GetLength(1)}]");
-                Console.WriteLine();
-
-                // Print first few new embeddings
-                Console.WriteLine("First 5 transformed embeddings:");
-                for (int i = 0; i < Math.Min(5, newEmbedding.GetLength(0)); i++)
-                {
-                    Console.WriteLine($"  New sample {i}: ({newEmbedding[i, 0]:F3}, {newEmbedding[i, 1]:F3})");
-                }
-                Console.WriteLine();
-
-                // === VALIDATION ===
-                Console.WriteLine("Step 5: Validation...");
-                
-                ValidateEmbeddings(embedding, "Training");
-                ValidateEmbeddings(newEmbedding, "Transformed");
-                
-                // === CLEANUP ===
-                Console.WriteLine("Step 6: Cleanup...");
-                
-                if (File.Exists(modelPath))
-                {
-                    File.Delete(modelPath);
-                    Console.WriteLine($"✓ Cleaned up model file: {modelPath}");
-                }
-
-                Console.WriteLine();
-                Console.WriteLine("=== All tests completed successfully! ===");
-                Console.WriteLine();
-                Console.WriteLine("UMAPuwotSharp C# wrapper features demonstrated:");
-                Console.WriteLine("✓ Cross-platform support (Windows/Linux)");
-                Console.WriteLine("✓ Model training and embedding");
-                Console.WriteLine("✓ Model persistence (save/load)");
-                Console.WriteLine("✓ Transform new data");
-                Console.WriteLine("✓ Proper error handling and memory management");
-                Console.WriteLine("✓ Clean, type-safe C# API");
+                Console.WriteLine("\nAll demos completed successfully!");
+                Console.WriteLine("Your enhanced UMAP wrapper is ready for production use!");
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"Error: {ex.Message}");
-                Console.WriteLine($"Type: {ex.GetType().Name}");
-                if (ex.InnerException != null)
-                {
-                    Console.WriteLine($"Inner: {ex.InnerException.Message}");
-                }
-                Environment.Exit(1);
+                Console.WriteLine($"Stack trace: {ex.StackTrace}");
             }
         }
 
-        /// <summary>
-        /// Generates synthetic test data for demonstration
-        /// </summary>
-        static float[,] GenerateTestData(int samples, int features, int seed = 42)
+        static void Demo27DEmbeddingWithProgress()
+        {
+            Console.WriteLine("=== Demo 1: 27D Embedding with Progress Reporting ===");
+
+            // Generate sample high-dimensional data
+            const int nSamples = 1000;
+            const int nFeatures = 100;
+            const int embeddingDim = 27;
+
+            var data = GenerateTestData(nSamples, nFeatures, DataPattern.Clustered);
+            Console.WriteLine($"Generated data: {nSamples} samples × {nFeatures} features");
+
+            using var model = new UMapModel();
+
+            Console.WriteLine("Training 27D UMAP embedding with progress reporting...");
+            var startTime = DateTime.Now;
+
+            // Progress tracking variables
+            var lastPercent = -1;
+            var progressBar = new char[50];
+
+            var embedding = model.FitWithProgress(
+                data: data,
+                progressCallback: (epoch, totalEpochs, percent) =>
+                {
+                    var currentPercent = (int)percent;
+                    if (currentPercent != lastPercent && currentPercent % 2 == 0) // Update every 2%
+                    {
+                        lastPercent = currentPercent;
+
+                        // Update progress bar
+                        var filled = (int)(percent / 2); // 50 characters for 100%
+                        for (int i = 0; i < 50; i++)
+                        {
+                            progressBar[i] = i < filled ? '█' : '░';
+                        }
+
+                        Console.Write($"\r  Progress: [{new string(progressBar)}] {percent:F1}% (Epoch {epoch}/{totalEpochs})");
+                    }
+                },
+                embeddingDimension: embeddingDim,
+                nNeighbors: 20,
+                minDist: 0.05f,
+                nEpochs: 300,
+                metric: DistanceMetric.Euclidean
+            );
+
+            var elapsed = DateTime.Now - startTime;
+            Console.WriteLine($"\nTraining completed in {elapsed.TotalMilliseconds:F0}ms");
+
+            // Display model info
+            var info = model.ModelInfo;
+            Console.WriteLine($"Model: {info}");
+
+            // Show embedding statistics
+            Console.WriteLine($"Embedding shape: [{embedding.GetLength(0)}, {embedding.GetLength(1)}]");
+            ShowEmbeddingStats(embedding, "27D embedding");
+
+            Console.WriteLine();
+        }
+
+        static void DemoMultiDimensionalEmbeddings()
+        {
+            Console.WriteLine("=== Demo 2: Multi-Dimensional Embeddings (1D to 50D) ===");
+
+            var data = GenerateTestData(300, 50, DataPattern.Standard);
+            Console.WriteLine($"Generated data: {data.GetLength(0)} samples × {data.GetLength(1)} features");
+
+            var testDimensions = new[] { 1, 2, 3, 5, 10, 15, 20, 27, 35, 50 };
+
+            foreach (var dim in testDimensions)
+            {
+                Console.WriteLine($"\nTesting {dim}D embedding:");
+
+                using var model = new UMapModel();
+
+                // Use progress callback for larger dimensions
+                ProgressCallback progressCallback = null;
+                if (dim >= 20)
+                {
+                    progressCallback = (epoch, totalEpochs, percent) =>
+                    {
+                        if (epoch % 25 == 0 || epoch == totalEpochs) // Report every 25 epochs
+                        {
+                            Console.Write($"\r    Training {dim}D: {percent:F0}% ");
+                        }
+                    };
+                }
+
+                var startTime = DateTime.Now;
+
+                float[,] embedding;
+                if (progressCallback != null)
+                {
+                    embedding = model.FitWithProgress(
+                        data,
+                        progressCallback,
+                        embeddingDimension: dim,
+                        nNeighbors: 15,
+                        minDist: 0.1f,
+                        nEpochs: 150,
+                        metric: DistanceMetric.Euclidean
+                    );
+                }
+                else
+                {
+                    embedding = model.Fit(
+                        data,
+                        embeddingDimension: dim,
+                        nNeighbors: 15,
+                        minDist: 0.1f,
+                        nEpochs: 150,
+                        metric: DistanceMetric.Euclidean
+                    );
+                }
+
+                var elapsed = DateTime.Now - startTime;
+
+                if (dim >= 20)
+                {
+                    Console.WriteLine(); // New line after progress
+                }
+
+                Console.WriteLine($"  Result: {embedding.GetLength(0)} samples → {dim}D in {elapsed.TotalMilliseconds:F0}ms");
+
+                var info = model.ModelInfo;
+                Console.WriteLine($"  Model info: {info.OutputDimension}D embedding, {info.TrainingSamples} training samples");
+
+                // Show stats for first few dimensions
+                ShowEmbeddingStats(embedding, $"{dim}D embedding", maxDims: Math.Min(5, dim));
+            }
+
+            Console.WriteLine();
+        }
+
+        static void DemoModelPersistence()
+        {
+            Console.WriteLine("=== Demo 3: Model Persistence and Transform ===");
+
+            const string modelFile = "demo_model.umap";
+
+            try
+            {
+                // Generate training data
+                var trainData = GenerateTestData(500, 50, DataPattern.Standard);
+                var testData = GenerateTestData(100, 50, DataPattern.Standard, seed: 456);
+
+                UMapModelInfo savedInfo;
+
+                // Train and save model with progress
+                using (var model = new UMapModel())
+                {
+                    Console.WriteLine("Training model with progress reporting...");
+
+                    var trainEmbedding = model.FitWithProgress(
+                        trainData,
+                        progressCallback: (epoch, totalEpochs, percent) =>
+                        {
+                            if (epoch % 20 == 0 || epoch == totalEpochs)
+                            {
+                                Console.Write($"\r  Training progress: {percent:F0}% (Epoch {epoch}/{totalEpochs})");
+                            }
+                        },
+                        embeddingDimension: 5,
+                        nNeighbors: 15,
+                        minDist: 0.1f,
+                        nEpochs: 200,
+                        metric: DistanceMetric.Cosine
+                    );
+
+                    Console.WriteLine(); // New line after progress
+
+                    savedInfo = model.ModelInfo;
+                    Console.WriteLine($"Trained model: {savedInfo}");
+
+                    Console.WriteLine("Saving model...");
+                    model.Save(modelFile);
+                    Console.WriteLine($"Model saved to: {modelFile}");
+                }
+
+                // Load and use model
+                Console.WriteLine("Loading model from disk...");
+                using var loadedModel = UMapModel.Load(modelFile);
+
+                var loadedInfo = loadedModel.ModelInfo;
+                Console.WriteLine($"Loaded model: {loadedInfo}");
+
+                // Verify model consistency
+                if (savedInfo.ToString() == loadedInfo.ToString())
+                {
+                    Console.WriteLine("✓ Model loaded successfully with consistent parameters");
+                }
+
+                // Transform new data
+                Console.WriteLine("Transforming new data...");
+                var testEmbedding = loadedModel.Transform(testData);
+                Console.WriteLine($"Transformed {testData.GetLength(0)} samples");
+
+                ShowEmbeddingStats(testEmbedding, "Transformed data");
+            }
+            finally
+            {
+                // Cleanup
+                if (File.Exists(modelFile))
+                    File.Delete(modelFile);
+            }
+
+            Console.WriteLine();
+        }
+
+        static void DemoDistanceMetricsWithProgress()
+        {
+            Console.WriteLine("=== Demo 4: Different Distance Metrics with Progress ===");
+
+            var metrics = new[]
+            {
+                (DistanceMetric.Euclidean, DataPattern.Standard, "Standard Gaussian data"),
+                (DistanceMetric.Cosine, DataPattern.Sparse, "Sparse high-dimensional data"),
+                (DistanceMetric.Manhattan, DataPattern.Clustered, "Clustered data (outlier robust)"),
+                (DistanceMetric.Correlation, DataPattern.Correlated, "Correlated features"),
+                (DistanceMetric.Hamming, DataPattern.Binary, "Binary/categorical data")
+            };
+
+            foreach (var (metric, pattern, description) in metrics)
+            {
+                Console.WriteLine($"\nTesting {UMapModel.GetMetricName(metric)} metric:");
+                Console.WriteLine($"  Data type: {description}");
+
+                var data = GenerateTestData(200, 20, pattern);
+
+                using var model = new UMapModel();
+
+                // Progress callback for this metric
+                var metricName = UMapModel.GetMetricName(metric);
+                var embedding = model.FitWithProgress(
+                    data,
+                    progressCallback: (epoch, totalEpochs, percent) =>
+                    {
+                        if (epoch % 15 == 0 || epoch == totalEpochs)
+                        {
+                            Console.Write($"\r  {metricName}: {percent:F0}% ");
+                        }
+                    },
+                    embeddingDimension: 2,
+                    nNeighbors: 12,
+                    minDist: 0.1f,
+                    nEpochs: 150,
+                    metric: metric
+                );
+
+                Console.WriteLine(); // New line after progress
+
+                var info = model.ModelInfo;
+                Console.WriteLine($"  Result: {embedding.GetLength(0)} samples → 2D, metric: {info.MetricName}");
+                ShowEmbeddingStats(embedding, $"{UMapModel.GetMetricName(metric)} embedding", maxDims: 2);
+            }
+
+            Console.WriteLine();
+        }
+
+        static float[,] GenerateTestData(int nSamples, int nFeatures, DataPattern pattern, int seed = 42)
         {
             var random = new Random(seed);
-            var data = new float[samples, features];
-            
-            for (int i = 0; i < samples; i++)
+            var data = new float[nSamples, nFeatures];
+
+            switch (pattern)
             {
-                for (int j = 0; j < features; j++)
-                {
-                    // Generate normally distributed data
-                    data[i, j] = (float)(random.NextGaussian() * 1.0 + 0.0);
-                }
+                case DataPattern.Standard:
+                    // Standard Gaussian
+                    for (int i = 0; i < nSamples; i++)
+                    {
+                        for (int j = 0; j < nFeatures; j++)
+                        {
+                            data[i, j] = (float)GenerateNormal(random);
+                        }
+                    }
+                    break;
+
+                case DataPattern.Sparse:
+                    // Sparse data (good for cosine metric)
+                    for (int i = 0; i < nSamples; i++)
+                    {
+                        for (int j = 0; j < nFeatures; j++)
+                        {
+                            data[i, j] = random.NextDouble() < 0.2
+                                ? (float)GenerateNormal(random)
+                                : 0.0f;
+                        }
+                    }
+                    break;
+
+                case DataPattern.Binary:
+                    // Binary data (good for Hamming metric)
+                    for (int i = 0; i < nSamples; i++)
+                    {
+                        for (int j = 0; j < nFeatures; j++)
+                        {
+                            data[i, j] = random.NextDouble() < 0.5 ? 1.0f : 0.0f;
+                        }
+                    }
+                    break;
+
+                case DataPattern.Clustered:
+                    // Clustered data
+                    var centers = new[] { -2.0f, 0.0f, 2.0f };
+                    for (int i = 0; i < nSamples; i++)
+                    {
+                        var center = centers[random.Next(centers.Length)];
+                        for (int j = 0; j < nFeatures; j++)
+                        {
+                            data[i, j] = center + (float)GenerateNormal(random) * 0.5f;
+                        }
+                    }
+                    break;
+
+                case DataPattern.Correlated:
+                    // Correlated features
+                    for (int i = 0; i < nSamples; i++)
+                    {
+                        var baseValue = (float)GenerateNormal(random);
+                        for (int j = 0; j < nFeatures; j++)
+                        {
+                            var correlation = 0.7f;
+                            var noise = (float)GenerateNormal(random) * (1.0f - correlation);
+                            data[i, j] = baseValue * correlation + noise;
+                        }
+                    }
+                    break;
             }
-            
+
             return data;
         }
 
-        /// <summary>
-        /// Validates embedding results
-        /// </summary>
-        static void ValidateEmbeddings(float[,] embedding, string name)
+        static double GenerateNormal(Random random)
+        {
+            // Box-Muller transform for normal distribution
+             double? spare = null;
+
+            if (spare != null)
+            {
+                var result = spare.Value;
+                spare = null;
+                return result;
+            }
+
+            var u1 = 1.0 - random.NextDouble();
+            var u2 = 1.0 - random.NextDouble();
+            var normal = Math.Sqrt(-2.0 * Math.Log(u1)) * Math.Cos(2.0 * Math.PI * u2);
+            spare = Math.Sqrt(-2.0 * Math.Log(u1)) * Math.Sin(2.0 * Math.PI * u2);
+
+            return normal;
+        }
+
+        static void ShowEmbeddingStats(float[,] embedding, string title, int maxDims = 5)
         {
             var nSamples = embedding.GetLength(0);
-            
-            float minX = float.MaxValue, maxX = float.MinValue;
-            float minY = float.MaxValue, maxY = float.MinValue;
-            
-            for (int i = 0; i < nSamples; i++)
+            var nDims = embedding.GetLength(1);
+
+            Console.WriteLine($"  {title} statistics (first {Math.Min(maxDims, nDims)} dimensions):");
+
+            for (int d = 0; d < Math.Min(maxDims, nDims); d++)
             {
-                var x = embedding[i, 0];
-                var y = embedding[i, 1];
-                
-                minX = Math.Min(minX, x);
-                maxX = Math.Max(maxX, x);
-                minY = Math.Min(minY, y);
-                maxY = Math.Max(maxY, y);
+                float min = float.MaxValue, max = float.MinValue, sum = 0;
+
+                for (int i = 0; i < nSamples; i++)
+                {
+                    var val = embedding[i, d];
+                    min = Math.Min(min, val);
+                    max = Math.Max(max, val);
+                    sum += val;
+                }
+
+                var mean = sum / nSamples;
+                Console.WriteLine($"    Dim {d}: range=[{min:F3}, {max:F3}], mean={mean:F3}");
             }
-            
-            Console.WriteLine($"{name} embedding bounds: X=[{minX:F3}, {maxX:F3}], Y=[{minY:F3}, {maxY:F3}]");
-            
-            var rangeX = maxX - minX;
-            var rangeY = maxY - minY;
-            
-            if (rangeX > 0 && rangeY > 0)
+
+            if (nDims > maxDims)
             {
-                Console.WriteLine($"✓ {name} embeddings have valid ranges");
-            }
-            else
-            {
-                Console.WriteLine($"⚠ {name} embeddings may have issues (zero range)");
+                Console.WriteLine($"    ... ({nDims - maxDims} more dimensions)");
             }
         }
-    }
 
-    /// <summary>
-    /// Extension methods for generating random numbers
-    /// </summary>
-    public static class RandomExtensions
-    {
-        /// <summary>
-        /// Generates a normally distributed random number using Box-Muller transform
-        /// </summary>
-        public static double NextGaussian(this Random random, double mean = 0.0, double stdDev = 1.0)
+        enum DataPattern
         {
-            // Box-Muller transform
-            double u1 = 1.0 - random.NextDouble(); // uniform(0,1] random doubles
-            double u2 = 1.0 - random.NextDouble();
-            double randStdNormal = Math.Sqrt(-2.0 * Math.Log(u1)) * Math.Sin(2.0 * Math.PI * u2);
-            return mean + stdDev * randStdNormal;
+            Standard,
+            Sparse,
+            Binary,
+            Clustered,
+            Correlated
         }
     }
 }

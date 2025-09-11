@@ -9,12 +9,12 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <PlatformTarget>x64</PlatformTarget>
     <RuntimeIdentifiers>win-x64;linux-x64</RuntimeIdentifiers>
+
+    <!-- NuGet metadata -->
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
-    
-    <!-- Package metadata -->
     <PackageId>UMAPuwotSharp</PackageId>
-    <Version>1.0.0</Version>
-    <Authors>Amin GHoliha</Authors>
+    <Version>2.0.0</Version>
+    <Authors>Amin Gholiha</Authors>
     <Company>ID Soft AB</Company>
     <Product>UMAPuwotSharp</Product>
     <Description>Cross-platform C# library for UMAP dimensionality reduction based on uwot implementation with save/load and transform capabilities.</Description>
@@ -36,23 +36,24 @@
     <Optimize>true</Optimize>
   </PropertyGroup>
 
-  <!-- Include native libraries in the package and copy to output -->
+  <!-- Include native libraries in the package -->
   <ItemGroup>
-    <Content Include="runtimes\**\*.*">
-      <Pack>true</Pack>
-      <PackagePath>runtimes\%(RecursiveDir)%(Filename)%(Extension)</PackagePath>
+    <Content Include="uwot.dll">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Pack>true</Pack>
+      <PackagePath>runtimes\win-x64\native\uwot.dll</PackagePath>
+    </Content>
+
+    <Content Include="libuwot.so">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Pack>true</Pack>
+      <PackagePath>runtimes\linux-x64\native\libuwot.so</PackagePath>
     </Content>
   </ItemGroup>
-
-  <!-- Ensure native libraries are copied to referencing projects -->
   <ItemGroup>
-    <None Include="runtimes\win-x64\native\uwot.dll" Condition="Exists('runtimes\win-x64\native\uwot.dll')">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <None Include="runtimes\linux-x64\native\libuwot.so" Condition="Exists('runtimes\linux-x64\native\libuwot.so')">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
+    <Folder Include="runtimes\linux-x64\native\" />
   </ItemGroup>
+
+  <!-- Include .targets file in NuGet package -->
 
 </Project>

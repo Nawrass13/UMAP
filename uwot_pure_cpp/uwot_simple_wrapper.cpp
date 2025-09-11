@@ -1,19 +1,21 @@
 #include "uwot_simple_wrapper.h"
-#include <cmath>  // Add this line for sqrt, etc.
+#include "smooth_knn.h"
 #include "optimize.h"
 #include "gradient.h" 
-#include "coords.h"
-#include "sampler.h"
-#include "perplexity.h"
+#include "transform.h"
+#include "update.h"
+#include "epoch.h"
+#include <cmath>
 #include <vector>
 #include <memory>
 #include <random>
 #include <algorithm>
-#include <cmath>
 #include <cstring>
 #include <map>
 #include <fstream>
 #include <sstream>
+#include <chrono>
+#include <cstdio>
 
 struct UwotModel {
     // Model parameters
@@ -22,148 +24,188 @@ struct UwotModel {
     int embedding_dim;
     int n_neighbors;
     float min_dist;
+    UwotMetric metric;
     float a, b; // UMAP curve parameters
     bool is_fitted;
 
     // Training data (needed for transform)
     std::vector<float> training_data;
 
-    // Graph structure
+    // Graph structure using uwot types
     std::vector<unsigned int> positive_head;
     std::vector<unsigned int> positive_tail;
-    std::vector<float> positive_weights;
-    std::vector<unsigned int> epochs_per_sample;
+    std::vector<double> positive_weights;  // uwot uses double for weights
 
     // Final embedding
     std::vector<float> embedding;
 
-    // k-NN structure for transformation
-    std::vector<std::vector<int>> knn_indices;
-    std::vector<std::vector<float>> knn_distances;
+    // k-NN structure for transformation (uwot format)
+    std::vector<int> nn_indices;      // flattened indices 
+    std::vector<float> nn_distances;  // flattened distances
+    std::vector<float> nn_weights;    // flattened weights for transform
 
     UwotModel() : n_vertices(0), n_dim(0), embedding_dim(2), n_neighbors(15),
-        min_dist(0.1f), a(1.929f), b(0.7915f), is_fitted(false) {
+        min_dist(0.1f), metric(UWOT_METRIC_EUCLIDEAN), a(1.929f), b(0.7915f), is_fitted(false) {
     }
 };
 
-// Standalone smooth k-NN implementation without Rcpp dependencies
-namespace standalone_smooth_knn {
+// Distance metric implementations
+namespace distance_metrics {
 
-    // Compute smooth k-nearest neighbor weights using perplexity-based approach
-    void compute_smooth_knn_weights(const std::vector<std::vector<float>>& distances,
-        std::vector<std::vector<float>>& weights,
-        float target_perplexity = 15.0f,
-        int max_iter = 200,
-        float tolerance = 1e-5f) {
-        int n = static_cast<int>(distances.size());
-        weights.resize(n);
+    float euclidean_distance(const float* a, const float* b, int dim) {
+        float dist = 0.0f;
+        for (int i = 0; i < dim; ++i) {
+            float diff = a[i] - b[i];
+            dist += diff * diff;
+        }
+        return std::sqrt(dist);
+    }
 
-        for (int i = 0; i < n; i++) {
-            int k = static_cast<int>(distances[i].size());
-            weights[i].resize(k);
+    float cosine_distance(const float* a, const float* b, int dim) {
+        float dot = 0.0f, norm_a = 0.0f, norm_b = 0.0f;
 
-            if (k == 0) continue;
+        for (int i = 0; i < dim; ++i) {
+            dot += a[i] * b[i];
+            norm_a += a[i] * a[i];
+            norm_b += b[i] * b[i];
+        }
 
-            // Binary search for sigma that gives target perplexity
-            float sigma_min = 1e-20f;
-            float sigma_max = 1e10f;
-            float sigma = 1.0f;
+        norm_a = std::sqrt(norm_a);
+        norm_b = std::sqrt(norm_b);
 
-            for (int iter = 0; iter < max_iter; iter++) {
-                // Compute P_j|i with current sigma
-                std::vector<float> p_conditional(k);
-                float sum_p = 0.0f;
+        if (norm_a < 1e-10f || norm_b < 1e-10f) return 1.0f;
 
-                for (int j = 0; j < k; j++) {
-                    p_conditional[j] = std::exp(-distances[i][j] * distances[i][j] / (2.0f * sigma * sigma));
-                    sum_p += p_conditional[j];
-                }
+        float cosine_sim = dot / (norm_a * norm_b);
+        cosine_sim = std::max(-1.0f, std::min(1.0f, cosine_sim));
 
-                // Normalize
-                if (sum_p > 1e-20f) {
-                    for (int j = 0; j < k; j++) {
-                        p_conditional[j] /= sum_p;
-                    }
-                }
-                else {
-                    // Handle degenerate case
-                    for (int j = 0; j < k; j++) {
-                        p_conditional[j] = 1.0f / k;
-                    }
-                }
+        return 1.0f - cosine_sim;
+    }
 
-                // Compute perplexity
-                float entropy = 0.0f;
-                for (int j = 0; j < k; j++) {
-                    if (p_conditional[j] > 1e-20f) {
-                        entropy -= p_conditional[j] * std::log2(p_conditional[j]);
-                    }
-                }
-                float perplexity = std::pow(2.0f, entropy);
+    float manhattan_distance(const float* a, const float* b, int dim) {
+        float dist = 0.0f;
+        for (int i = 0; i < dim; ++i) {
+            dist += std::abs(a[i] - b[i]);
+        }
+        return dist;
+    }
 
-                // Check convergence
-                if (std::abs(perplexity - target_perplexity) < tolerance) {
-                    weights[i] = p_conditional;
-                    break;
-                }
+    float correlation_distance(const float* a, const float* b, int dim) {
+        float mean_a = 0.0f, mean_b = 0.0f;
+        for (int i = 0; i < dim; ++i) {
+            mean_a += a[i];
+            mean_b += b[i];
+        }
+        mean_a /= static_cast<float>(dim);
+        mean_b /= static_cast<float>(dim);
 
-                // Adjust sigma
-                if (perplexity > target_perplexity) {
-                    sigma_max = sigma;
-                    sigma = (sigma + sigma_min) / 2.0f;
-                }
-                else {
-                    sigma_min = sigma;
-                    sigma = (sigma + sigma_max) / 2.0f;
-                }
+        float num = 0.0f, den_a = 0.0f, den_b = 0.0f;
+        for (int i = 0; i < dim; ++i) {
+            float diff_a = a[i] - mean_a;
+            float diff_b = b[i] - mean_b;
+            num += diff_a * diff_b;
+            den_a += diff_a * diff_a;
+            den_b += diff_b * diff_b;
+        }
 
-                // Final iteration fallback
-                if (iter == max_iter - 1) {
-                    weights[i] = p_conditional;
-                }
+        if (den_a < 1e-10f || den_b < 1e-10f) return 1.0f;
+
+        float correlation = num / std::sqrt(den_a * den_b);
+        correlation = std::max(-1.0f, std::min(1.0f, correlation));
+
+        return 1.0f - correlation;
+    }
+
+    float hamming_distance(const float* a, const float* b, int dim) {
+        int different = 0;
+        for (int i = 0; i < dim; ++i) {
+            if (std::abs(a[i] - b[i]) > 1e-6f) {
+                different++;
             }
+        }
+        return static_cast<float>(different) / static_cast<float>(dim);
+    }
+
+    float compute_distance(const float* a, const float* b, int dim, UwotMetric metric) {
+        switch (metric) {
+        case UWOT_METRIC_EUCLIDEAN:
+            return euclidean_distance(a, b, dim);
+        case UWOT_METRIC_COSINE:
+            return cosine_distance(a, b, dim);
+        case UWOT_METRIC_MANHATTAN:
+            return manhattan_distance(a, b, dim);
+        case UWOT_METRIC_CORRELATION:
+            return correlation_distance(a, b, dim);
+        case UWOT_METRIC_HAMMING:
+            return hamming_distance(a, b, dim);
+        default:
+            return euclidean_distance(a, b, dim);
+        }
+    }
+}
+
+// Build k-NN graph using specified distance metric
+void build_knn_graph(const std::vector<float>& data, int n_obs, int n_dim,
+    int n_neighbors, UwotMetric metric,
+    std::vector<int>& nn_indices, std::vector<double>& nn_distances) {
+
+    nn_indices.resize(static_cast<size_t>(n_obs) * static_cast<size_t>(n_neighbors));
+    nn_distances.resize(static_cast<size_t>(n_obs) * static_cast<size_t>(n_neighbors));
+
+    for (int i = 0; i < n_obs; i++) {
+        std::vector<std::pair<double, int>> distances;
+
+        for (int j = 0; j < n_obs; j++) {
+            if (i == j) continue;
+
+            float dist = distance_metrics::compute_distance(
+                &data[static_cast<size_t>(i) * static_cast<size_t>(n_dim)],
+                &data[static_cast<size_t>(j) * static_cast<size_t>(n_dim)],
+                n_dim, metric);
+            distances.push_back({ static_cast<double>(dist), j });
+        }
+
+        std::partial_sort(distances.begin(),
+            distances.begin() + n_neighbors,
+            distances.end());
+
+        for (int k = 0; k < n_neighbors; k++) {
+            nn_indices[static_cast<size_t>(i) * static_cast<size_t>(n_neighbors) + static_cast<size_t>(k)] = distances[static_cast<size_t>(k)].second;
+            nn_distances[static_cast<size_t>(i) * static_cast<size_t>(n_neighbors) + static_cast<size_t>(k)] = distances[static_cast<size_t>(k)].first;
+        }
+    }
+}
+
+// Convert uwot smooth k-NN output to edge list format
+void convert_to_edges(const std::vector<int>& nn_indices,
+    const std::vector<double>& nn_weights,
+    int n_obs, int n_neighbors,
+    std::vector<unsigned int>& heads,
+    std::vector<unsigned int>& tails,
+    std::vector<double>& weights) {
+
+    // Use map to store symmetric edges and combine weights
+    std::map<std::pair<int, int>, double> edge_map;
+
+    for (int i = 0; i < n_obs; i++) {
+        for (int k = 0; k < n_neighbors; k++) {
+            int j = nn_indices[static_cast<size_t>(i) * static_cast<size_t>(n_neighbors) + static_cast<size_t>(k)];
+            double weight = nn_weights[static_cast<size_t>(i) * static_cast<size_t>(n_neighbors) + static_cast<size_t>(k)];
+
+            // Add edge in both directions for symmetrization
+            edge_map[{i, j}] += weight;
+            edge_map[{j, i}] += weight;
         }
     }
 
-    // Symmetrize the probability matrix
-    void symmetrize_matrix(const std::vector<std::vector<int>>& indices,
-        const std::vector<std::vector<float>>& weights,
-        std::vector<unsigned int>& head,
-        std::vector<unsigned int>& tail,
-        std::vector<float>& symmetric_weights) {
+    // Convert to edge list, avoiding duplicates
+    for (const auto& edge : edge_map) {
+        int i = edge.first.first;
+        int j = edge.first.second;
 
-        int n = static_cast<int>(indices.size());
-
-        // Build sparse matrix representation
-        std::map<std::pair<int, int>, float> edge_map;
-
-        for (int i = 0; i < n; i++) {
-            for (int j = 0; j < static_cast<int>(indices[i].size()); j++) {
-                int neighbor = indices[i][j];
-                float weight = weights[i][j];
-
-                // Add both directions
-                edge_map[{i, neighbor}] += weight;
-                edge_map[{neighbor, i}] += weight;
-            }
-        }
-
-        // Convert to edge list and symmetrize
-        head.clear();
-        tail.clear();
-        symmetric_weights.clear();
-
-        for (const auto& edge : edge_map) {
-            int i = edge.first.first;
-            int j = edge.first.second;
-
-            if (i < j) { // Avoid duplicates
-                float sym_weight = edge.second / 2.0f; // Average the weights
-
-                head.push_back(static_cast<unsigned int>(i));
-                tail.push_back(static_cast<unsigned int>(j));
-                symmetric_weights.push_back(sym_weight);
-            }
+        if (i < j) { // Only add each edge once
+            heads.push_back(static_cast<unsigned int>(i));
+            tails.push_back(static_cast<unsigned int>(j));
+            weights.push_back(edge.second / 2.0); // Average the weights
         }
     }
 }
@@ -183,176 +225,219 @@ extern "C" {
         float* data,
         int n_obs,
         int n_dim,
+        int embedding_dim,
         int n_neighbors,
         float min_dist,
         int n_epochs,
+        UwotMetric metric,
         float* embedding) {
 
+        return uwot_fit_with_progress(model, data, n_obs, n_dim, embedding_dim,
+            n_neighbors, min_dist, n_epochs, metric,
+            embedding, nullptr);
+    }
+
+    UWOT_API int uwot_fit_with_progress(UwotModel* model,
+        float* data,
+        int n_obs,
+        int n_dim,
+        int embedding_dim,
+        int n_neighbors,
+        float min_dist,
+        int n_epochs,
+        UwotMetric metric,
+        float* embedding,
+        uwot_progress_callback progress_callback) {
+
         if (!model || !data || !embedding || n_obs <= 0 || n_dim <= 0 ||
-            n_neighbors <= 0 || n_epochs <= 0) {
+            embedding_dim <= 0 || n_neighbors <= 0 || n_epochs <= 0) {
+            return UWOT_ERROR_INVALID_PARAMS;
+        }
+
+        if (embedding_dim > 50) {
             return UWOT_ERROR_INVALID_PARAMS;
         }
 
         try {
             model->n_vertices = n_obs;
             model->n_dim = n_dim;
-            model->embedding_dim = 2; // Default to 2D embedding
+            model->embedding_dim = embedding_dim;
             model->n_neighbors = n_neighbors;
             model->min_dist = min_dist;
+            model->metric = metric;
 
-            // Store training data for future transformations
-            model->training_data.assign(data, data + (n_obs * n_dim));
+            // Store training data
+            std::vector<float> input_data(data, data + (static_cast<size_t>(n_obs) * static_cast<size_t>(n_dim)));
+            model->training_data = input_data;
 
-            // Adjust UMAP curve parameters based on min_dist
+            // Build k-NN graph using specified metric
+            std::vector<int> nn_indices;
+            std::vector<double> nn_distances;
+            build_knn_graph(input_data, n_obs, n_dim, n_neighbors, metric,
+                nn_indices, nn_distances);
+
+            // Use uwot smooth_knn to compute weights
+            std::vector<std::size_t> nn_ptr = { static_cast<std::size_t>(n_neighbors) };
+            std::vector<double> target = { std::log2(static_cast<double>(n_neighbors)) };
+            std::vector<double> nn_weights(nn_indices.size());
+            std::vector<double> sigmas, rhos;
+            std::atomic<std::size_t> n_search_fails{ 0 };
+
+            uwot::smooth_knn(0, static_cast<std::size_t>(n_obs), nn_distances, nn_ptr, false, target,
+                1.0, 1e-5, 64, 0.001,
+                uwot::mean_average(nn_distances), false,
+                nn_weights, sigmas, rhos, n_search_fails);
+
+            // Convert to edge format for optimization
+            convert_to_edges(nn_indices, nn_weights, n_obs, n_neighbors,
+                model->positive_head, model->positive_tail, model->positive_weights);
+
+            // Store k-NN data for transform (flattened format)
+            model->nn_indices = nn_indices;
+            model->nn_distances.resize(nn_distances.size());
+            model->nn_weights.resize(nn_weights.size());
+            for (size_t i = 0; i < nn_distances.size(); i++) {
+                model->nn_distances[i] = static_cast<float>(nn_distances[i]);
+                model->nn_weights[i] = static_cast<float>(nn_weights[i]);
+            }
+
+            // Initialize embedding
+            model->embedding.resize(static_cast<size_t>(n_obs) * static_cast<size_t>(embedding_dim));
+            std::mt19937 gen(42);
+            std::normal_distribution<float> dist(0.0f, 1e-4f);
+            for (size_t i = 0; i < static_cast<size_t>(n_obs) * static_cast<size_t>(embedding_dim); i++) {
+                model->embedding[i] = dist(gen);
+            }
+
+            // Set up UMAP parameters
+            model->a = 1.929f;
+            model->b = 0.7915f;
             if (min_dist != 0.1f) {
+                // Adjust parameters based on min_dist (simplified)
                 model->a = 1.0f / (1.0f + model->a * std::pow(min_dist, 2.0f * model->b));
                 model->b = 1.0f;
             }
 
-            // Step 1: Build k-nearest neighbor graph
-            model->knn_indices.resize(n_obs);
-            model->knn_distances.resize(n_obs);
+            // Direct UMAP optimization implementation with progress reporting
+            const float learning_rate = 1.0f;
+            std::mt19937 rng(42);
+            std::uniform_int_distribution<size_t> vertex_dist(0, static_cast<size_t>(n_obs) - 1);
 
-            // Simple brute force k-NN
-            for (int i = 0; i < n_obs; i++) {
-                std::vector<std::pair<float, int>> distances;
+            // Progress reporting setup
+            int progress_interval = std::max(1, n_epochs / 20);  // Report every 5% progress
+            auto last_report_time = std::chrono::steady_clock::now();
 
-                for (int j = 0; j < n_obs; j++) {
-                    if (i == j) continue;
-
-                    float dist = 0.0f;
-                    for (int k = 0; k < n_dim; k++) {
-                        float diff = data[i * n_dim + k] - data[j * n_dim + k];
-                        dist += diff * diff;
-                    }
-                    dist = std::sqrt(dist);
-                    distances.push_back({ dist, j });
-                }
-
-                // Get k nearest neighbors
-                std::partial_sort(distances.begin(),
-                    distances.begin() + n_neighbors,
-                    distances.end());
-
-                model->knn_indices[i].resize(n_neighbors);
-                model->knn_distances[i].resize(n_neighbors);
-                for (int k = 0; k < n_neighbors; k++) {
-                    model->knn_indices[i][k] = distances[k].second;
-                    model->knn_distances[i][k] = distances[k].first;
-                }
+            // Only show console output if no callback provided
+            if (!progress_callback) {
+                std::printf("UMAP Training Progress:\n");
+                std::printf("[                    ] 0%% (Epoch 0/%d)\n", n_epochs);
+                std::fflush(stdout);
             }
-
-            // Step 2: Compute smooth k-NN weights using standalone implementation
-            std::vector<std::vector<float>> smooth_weights;
-            standalone_smooth_knn::compute_smooth_knn_weights(model->knn_distances, smooth_weights, 15.0f);
-
-            // Step 3: Symmetrize to get final graph
-            standalone_smooth_knn::symmetrize_matrix(model->knn_indices, smooth_weights,
-                model->positive_head,
-                model->positive_tail,
-                model->positive_weights);
-
-            // Step 4: Initialize embedding
-            model->embedding.resize(n_obs * model->embedding_dim);
-            std::mt19937 gen(42); // Fixed seed for reproducibility
-            std::normal_distribution<float> dist(0.0f, 1e-4f);
-
-            for (int i = 0; i < n_obs * model->embedding_dim; i++) {
-                model->embedding[i] = dist(gen);
-            }
-
-            // Step 5: Compute epochs per sample
-            model->epochs_per_sample.resize(model->positive_weights.size());
-            if (!model->positive_weights.empty()) {
-                float max_weight = *std::max_element(model->positive_weights.begin(),
-                    model->positive_weights.end());
-
-                for (size_t i = 0; i < model->positive_weights.size(); i++) {
-                    model->epochs_per_sample[i] = static_cast<unsigned int>(
-                        std::max(1.0f, n_epochs * model->positive_weights[i] / max_weight));
-                }
-            }
-
-            // Step 6: Optimization (simplified gradient descent)
-            float learning_rate = 1.0f;
-            float a = model->a;
-            float b = model->b;
 
             for (int epoch = 0; epoch < n_epochs; epoch++) {
-                float alpha = learning_rate * (1.0f - static_cast<float>(epoch) / n_epochs);
+                float alpha = learning_rate * (1.0f - static_cast<float>(epoch) / static_cast<float>(n_epochs));
 
-                // Process positive samples
-                for (size_t edge = 0; edge < model->positive_head.size(); edge++) {
-                    if (model->epochs_per_sample[edge] > 0 &&
-                        epoch % model->epochs_per_sample[edge] == 0) {
+                // Process positive edges (attractive forces)
+                for (size_t edge_idx = 0; edge_idx < model->positive_head.size(); edge_idx++) {
+                    size_t i = static_cast<size_t>(model->positive_head[edge_idx]);
+                    size_t j = static_cast<size_t>(model->positive_tail[edge_idx]);
 
-                        unsigned int i = model->positive_head[edge];
-                        unsigned int j = model->positive_tail[edge];
+                    // Compute squared distance
+                    float dist_sq = 0.0f;
+                    for (int d = 0; d < embedding_dim; d++) {
+                        float diff = model->embedding[i * static_cast<size_t>(embedding_dim) + static_cast<size_t>(d)] -
+                            model->embedding[j * static_cast<size_t>(embedding_dim) + static_cast<size_t>(d)];
+                        dist_sq += diff * diff;
+                    }
 
-                        // Compute current distance in embedding space
-                        float dist_sq = 0.0f;
-                        for (int d = 0; d < model->embedding_dim; d++) {
-                            float diff = model->embedding[i * model->embedding_dim + d] -
-                                model->embedding[j * model->embedding_dim + d];
-                            dist_sq += diff * diff;
-                        }
+                    if (dist_sq > std::numeric_limits<float>::epsilon()) {
+                        // UMAP attractive gradient: -2ab * d^(2b-2) / (1 + a*d^(2b))
+                        float pd2b = std::pow(dist_sq, model->b);
+                        float grad_coeff = (-2.0f * model->a * model->b * pd2b) /
+                            (dist_sq * (model->a * pd2b + 1.0f));
 
-                        // Avoid division by zero
-                        dist_sq = std::max(dist_sq, 1e-12f);
+                        // Apply clamping
+                        grad_coeff = std::max(-4.0f, std::min(4.0f, grad_coeff));
 
-                        // Attractive force gradient
-                        float grad_coeff = 2.0f * a * b * std::pow(dist_sq, b - 1.0f) /
-                            (a * std::pow(dist_sq, b) + 1.0f);
-
-                        // Apply gradient
-                        for (int d = 0; d < model->embedding_dim; d++) {
-                            float diff = model->embedding[i * model->embedding_dim + d] -
-                                model->embedding[j * model->embedding_dim + d];
-                            float grad = grad_coeff * diff;
-
-                            model->embedding[i * model->embedding_dim + d] -= alpha * grad;
-                            model->embedding[j * model->embedding_dim + d] += alpha * grad;
+                        for (int d = 0; d < embedding_dim; d++) {
+                            float diff = model->embedding[i * static_cast<size_t>(embedding_dim) + static_cast<size_t>(d)] -
+                                model->embedding[j * static_cast<size_t>(embedding_dim) + static_cast<size_t>(d)];
+                            float grad = alpha * grad_coeff * diff;
+                            model->embedding[i * static_cast<size_t>(embedding_dim) + static_cast<size_t>(d)] += grad;
+                            model->embedding[j * static_cast<size_t>(embedding_dim) + static_cast<size_t>(d)] -= grad;
                         }
                     }
-                }
 
-                // Negative sampling
-                if (epoch % 5 == 0) {
-                    std::uniform_int_distribution<int> point_dist(0, n_obs - 1);
+                    // Negative sampling (5 samples per positive edge)
+                    for (int neg = 0; neg < 5; neg++) {
+                        size_t k = vertex_dist(rng);
+                        if (k == i || k == j) continue;
 
-                    for (int neg_sample = 0; neg_sample < n_obs / 10; neg_sample++) {
-                        int i = point_dist(gen);
-                        int j = point_dist(gen);
-                        if (i == j) continue;
-
-                        float dist_sq = 0.0f;
-                        for (int d = 0; d < model->embedding_dim; d++) {
-                            float diff = model->embedding[i * model->embedding_dim + d] -
-                                model->embedding[j * model->embedding_dim + d];
-                            dist_sq += diff * diff;
+                        float neg_dist_sq = 0.0f;
+                        for (int d = 0; d < embedding_dim; d++) {
+                            float diff = model->embedding[i * static_cast<size_t>(embedding_dim) + static_cast<size_t>(d)] -
+                                model->embedding[k * static_cast<size_t>(embedding_dim) + static_cast<size_t>(d)];
+                            neg_dist_sq += diff * diff;
                         }
 
-                        if (dist_sq > 0.0f) {
-                            // Repulsive force gradient
-                            float grad_coeff = 2.0f * b / (0.001f + dist_sq) /
-                                (a * std::pow(dist_sq, b) + 1.0f);
+                        if (neg_dist_sq > std::numeric_limits<float>::epsilon()) {
+                            // UMAP repulsive gradient: 2b / ((0.001 + d^2) * (1 + a*d^(2b)))
+                            float pd2b = std::pow(neg_dist_sq, model->b);
+                            float grad_coeff = (2.0f * model->b) /
+                                ((0.001f + neg_dist_sq) * (model->a * pd2b + 1.0f));
 
-                            for (int d = 0; d < model->embedding_dim; d++) {
-                                float diff = model->embedding[i * model->embedding_dim + d] -
-                                    model->embedding[j * model->embedding_dim + d];
-                                float grad = grad_coeff * diff;
+                            // Apply clamping
+                            grad_coeff = std::max(-4.0f, std::min(4.0f, grad_coeff));
 
-                                model->embedding[i * model->embedding_dim + d] += alpha * grad;
-                                model->embedding[j * model->embedding_dim + d] -= alpha * grad;
+                            for (int d = 0; d < embedding_dim; d++) {
+                                float diff = model->embedding[i * static_cast<size_t>(embedding_dim) + static_cast<size_t>(d)] -
+                                    model->embedding[k * static_cast<size_t>(embedding_dim) + static_cast<size_t>(d)];
+                                float grad = alpha * grad_coeff * diff;
+                                model->embedding[i * static_cast<size_t>(embedding_dim) + static_cast<size_t>(d)] += grad;
                             }
                         }
                     }
                 }
+
+                // Progress reporting
+                if (epoch % progress_interval == 0 || epoch == n_epochs - 1) {
+                    float percent = (static_cast<float>(epoch + 1) / static_cast<float>(n_epochs)) * 100.0f;
+
+                    if (progress_callback) {
+                        // Use callback for C# integration
+                        progress_callback(epoch + 1, n_epochs, percent);
+                    }
+                    else {
+                        // Console output for C++ testing
+                        int percent_int = static_cast<int>(percent);
+                        int filled = percent_int / 5;  // 20 characters for 100%
+
+                        auto current_time = std::chrono::steady_clock::now();
+                        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(current_time - last_report_time);
+
+                        std::printf("\r[");
+                        for (int i = 0; i < 20; i++) {
+                            if (i < filled) std::printf("=");
+                            else if (i == filled && percent_int % 5 >= 2) std::printf(">");
+                            else std::printf(" ");
+                        }
+                        std::printf("] %d%% (Epoch %d/%d) [%lldms]",
+                            percent_int, epoch + 1, n_epochs, static_cast<long long>(elapsed.count()));
+                        std::fflush(stdout);
+
+                        last_report_time = current_time;
+                    }
+                }
+            }
+
+            if (!progress_callback) {
+                std::printf("\nTraining completed!\n");
+                std::fflush(stdout);
             }
 
             // Copy result to output
             std::memcpy(embedding, model->embedding.data(),
-                n_obs * model->embedding_dim * sizeof(float));
+                static_cast<size_t>(n_obs) * static_cast<size_t>(embedding_dim) * sizeof(float));
 
             model->is_fitted = true;
             return UWOT_SUCCESS;
@@ -375,52 +460,56 @@ extern "C" {
         }
 
         try {
-            // For each new data point, find its position in the existing embedding
+            // Build k-NN from new data to training data
+            std::vector<int> new_nn_indices(static_cast<size_t>(n_new_obs) * static_cast<size_t>(model->n_neighbors));
+            std::vector<float> new_nn_weights(static_cast<size_t>(n_new_obs) * static_cast<size_t>(model->n_neighbors));
+
             for (int i = 0; i < n_new_obs; i++) {
-                // Find k nearest neighbors in training data
                 std::vector<std::pair<float, int>> distances;
 
+                // Find nearest neighbors in training data
                 for (int j = 0; j < model->n_vertices; j++) {
-                    float dist = 0.0f;
-                    for (int k = 0; k < n_dim; k++) {
-                        float diff = new_data[i * n_dim + k] - model->training_data[j * n_dim + k];
-                        dist += diff * diff;
-                    }
-                    dist = std::sqrt(dist);
+                    float dist = distance_metrics::compute_distance(
+                        &new_data[static_cast<size_t>(i) * static_cast<size_t>(n_dim)],
+                        &model->training_data[static_cast<size_t>(j) * static_cast<size_t>(n_dim)],
+                        n_dim, model->metric);
                     distances.push_back({ dist, j });
                 }
 
-                // Get k nearest neighbors
-                int k = std::min(model->n_neighbors, static_cast<int>(distances.size()));
-                std::partial_sort(distances.begin(), distances.begin() + k, distances.end());
+                std::partial_sort(distances.begin(),
+                    distances.begin() + model->n_neighbors,
+                    distances.end());
 
-                // Weighted average of neighbor embeddings
+                // Store indices and compute simple inverse distance weights
                 float total_weight = 0.0f;
-                float embed_x = 0.0f, embed_y = 0.0f;
-
-                for (int j = 0; j < k; j++) {
-                    int neighbor_idx = distances[j].second;
-                    float dist = distances[j].first;
-
-                    // Use inverse distance weighting with exponential decay
-                    float weight = std::exp(-dist * dist / (2.0f * 0.1f * 0.1f));
-
-                    embed_x += weight * model->embedding[neighbor_idx * model->embedding_dim];
-                    embed_y += weight * model->embedding[neighbor_idx * model->embedding_dim + 1];
+                for (int k = 0; k < model->n_neighbors; k++) {
+                    new_nn_indices[static_cast<size_t>(i) * static_cast<size_t>(model->n_neighbors) + static_cast<size_t>(k)] = distances[static_cast<size_t>(k)].second;
+                    float weight = std::exp(-distances[static_cast<size_t>(k)].first * distances[static_cast<size_t>(k)].first / (2.0f * 0.1f * 0.1f));
+                    new_nn_weights[static_cast<size_t>(i) * static_cast<size_t>(model->n_neighbors) + static_cast<size_t>(k)] = weight;
                     total_weight += weight;
                 }
 
+                // Normalize weights
                 if (total_weight > 0.0f) {
-                    embedding[i * model->embedding_dim] = embed_x / total_weight;
-                    embedding[i * model->embedding_dim + 1] = embed_y / total_weight;
-                }
-                else {
-                    // Fallback: use nearest neighbor
-                    int nearest = distances[0].second;
-                    embedding[i * model->embedding_dim] = model->embedding[nearest * model->embedding_dim];
-                    embedding[i * model->embedding_dim + 1] = model->embedding[nearest * model->embedding_dim + 1];
+                    for (int k = 0; k < model->n_neighbors; k++) {
+                        new_nn_weights[static_cast<size_t>(i) * static_cast<size_t>(model->n_neighbors) + static_cast<size_t>(k)] /= total_weight;
+                    }
                 }
             }
+
+            // Use uwot transform to initialize new points
+            std::vector<float> new_embedding(static_cast<size_t>(n_new_obs) * static_cast<size_t>(model->embedding_dim));
+            uwot::init_by_mean(0, static_cast<std::size_t>(n_new_obs), static_cast<std::size_t>(model->embedding_dim),
+                static_cast<std::size_t>(model->n_neighbors),
+                new_nn_indices, new_nn_weights,
+                static_cast<std::size_t>(n_new_obs),
+                model->embedding,
+                static_cast<std::size_t>(model->n_vertices),
+                new_embedding);
+
+            // Copy result to output
+            std::memcpy(embedding, new_embedding.data(),
+                static_cast<size_t>(n_new_obs) * static_cast<size_t>(model->embedding_dim) * sizeof(float));
 
             return UWOT_SUCCESS;
 
@@ -444,8 +533,7 @@ extern "C" {
             // Write header
             const char* magic = "UMAP";
             file.write(magic, 4);
-
-            int version = 1;
+            int version = 2;
             file.write(reinterpret_cast<const char*>(&version), sizeof(int));
 
             // Write model parameters
@@ -454,6 +542,7 @@ extern "C" {
             file.write(reinterpret_cast<const char*>(&model->embedding_dim), sizeof(int));
             file.write(reinterpret_cast<const char*>(&model->n_neighbors), sizeof(int));
             file.write(reinterpret_cast<const char*>(&model->min_dist), sizeof(float));
+            file.write(reinterpret_cast<const char*>(&model->metric), sizeof(UwotMetric));
             file.write(reinterpret_cast<const char*>(&model->a), sizeof(float));
             file.write(reinterpret_cast<const char*>(&model->b), sizeof(float));
 
@@ -469,22 +558,21 @@ extern "C" {
             file.write(reinterpret_cast<const char*>(model->embedding.data()),
                 embedding_size * sizeof(float));
 
-            // Write k-NN indices
-            file.write(reinterpret_cast<const char*>(&model->n_vertices), sizeof(int));
-            for (int i = 0; i < model->n_vertices; i++) {
-                size_t knn_size = model->knn_indices[i].size();
-                file.write(reinterpret_cast<const char*>(&knn_size), sizeof(size_t));
-                file.write(reinterpret_cast<const char*>(model->knn_indices[i].data()),
-                    knn_size * sizeof(int));
-            }
+            // Write k-NN data for transform
+            size_t nn_indices_size = model->nn_indices.size();
+            file.write(reinterpret_cast<const char*>(&nn_indices_size), sizeof(size_t));
+            file.write(reinterpret_cast<const char*>(model->nn_indices.data()),
+                nn_indices_size * sizeof(int));
 
-            // Write k-NN distances
-            for (int i = 0; i < model->n_vertices; i++) {
-                size_t knn_size = model->knn_distances[i].size();
-                file.write(reinterpret_cast<const char*>(&knn_size), sizeof(size_t));
-                file.write(reinterpret_cast<const char*>(model->knn_distances[i].data()),
-                    knn_size * sizeof(float));
-            }
+            size_t nn_distances_size = model->nn_distances.size();
+            file.write(reinterpret_cast<const char*>(&nn_distances_size), sizeof(size_t));
+            file.write(reinterpret_cast<const char*>(model->nn_distances.data()),
+                nn_distances_size * sizeof(float));
+
+            size_t nn_weights_size = model->nn_weights.size();
+            file.write(reinterpret_cast<const char*>(&nn_weights_size), sizeof(size_t));
+            file.write(reinterpret_cast<const char*>(model->nn_weights.data()),
+                nn_weights_size * sizeof(float));
 
             file.close();
             return UWOT_SUCCESS;
@@ -516,12 +604,11 @@ extern "C" {
 
             int version;
             file.read(reinterpret_cast<char*>(&version), sizeof(int));
-            if (version != 1) {
+            if (version != 1 && version != 2) {
                 file.close();
                 return nullptr;
             }
 
-            // Create new model
             UwotModel* model = new UwotModel();
 
             // Read model parameters
@@ -530,6 +617,14 @@ extern "C" {
             file.read(reinterpret_cast<char*>(&model->embedding_dim), sizeof(int));
             file.read(reinterpret_cast<char*>(&model->n_neighbors), sizeof(int));
             file.read(reinterpret_cast<char*>(&model->min_dist), sizeof(float));
+
+            if (version >= 2) {
+                file.read(reinterpret_cast<char*>(&model->metric), sizeof(UwotMetric));
+            }
+            else {
+                model->metric = UWOT_METRIC_EUCLIDEAN;
+            }
+
             file.read(reinterpret_cast<char*>(&model->a), sizeof(float));
             file.read(reinterpret_cast<char*>(&model->b), sizeof(float));
 
@@ -547,33 +642,24 @@ extern "C" {
             file.read(reinterpret_cast<char*>(model->embedding.data()),
                 embedding_size * sizeof(float));
 
-            // Read k-NN indices
-            int n_vertices_check;
-            file.read(reinterpret_cast<char*>(&n_vertices_check), sizeof(int));
-            if (n_vertices_check != model->n_vertices) {
-                delete model;
-                file.close();
-                return nullptr;
-            }
+            // Read k-NN data for transform
+            size_t nn_indices_size;
+            file.read(reinterpret_cast<char*>(&nn_indices_size), sizeof(size_t));
+            model->nn_indices.resize(nn_indices_size);
+            file.read(reinterpret_cast<char*>(model->nn_indices.data()),
+                nn_indices_size * sizeof(int));
 
-            model->knn_indices.resize(model->n_vertices);
-            for (int i = 0; i < model->n_vertices; i++) {
-                size_t knn_size;
-                file.read(reinterpret_cast<char*>(&knn_size), sizeof(size_t));
-                model->knn_indices[i].resize(knn_size);
-                file.read(reinterpret_cast<char*>(model->knn_indices[i].data()),
-                    knn_size * sizeof(int));
-            }
+            size_t nn_distances_size;
+            file.read(reinterpret_cast<char*>(&nn_distances_size), sizeof(size_t));
+            model->nn_distances.resize(nn_distances_size);
+            file.read(reinterpret_cast<char*>(model->nn_distances.data()),
+                nn_distances_size * sizeof(float));
 
-            // Read k-NN distances
-            model->knn_distances.resize(model->n_vertices);
-            for (int i = 0; i < model->n_vertices; i++) {
-                size_t knn_size;
-                file.read(reinterpret_cast<char*>(&knn_size), sizeof(size_t));
-                model->knn_distances[i].resize(knn_size);
-                file.read(reinterpret_cast<char*>(model->knn_distances[i].data()),
-                    knn_size * sizeof(float));
-            }
+            size_t nn_weights_size;
+            file.read(reinterpret_cast<char*>(&nn_weights_size), sizeof(size_t));
+            model->nn_weights.resize(nn_weights_size);
+            file.read(reinterpret_cast<char*>(model->nn_weights.data()),
+                nn_weights_size * sizeof(float));
 
             model->is_fitted = true;
             file.close();
@@ -584,13 +670,13 @@ extern "C" {
             return nullptr;
         }
     }
-
     UWOT_API int uwot_get_model_info(UwotModel* model,
         int* n_vertices,
         int* n_dim,
         int* embedding_dim,
         int* n_neighbors,
-        float* min_dist) {
+        float* min_dist,
+        UwotMetric* metric) {
         if (!model) {
             return UWOT_ERROR_INVALID_PARAMS;
         }
@@ -600,6 +686,7 @@ extern "C" {
         if (embedding_dim) *embedding_dim = model->embedding_dim;
         if (n_neighbors) *n_neighbors = model->n_neighbors;
         if (min_dist) *min_dist = model->min_dist;
+        if (metric) *metric = model->metric;
 
         return UWOT_SUCCESS;
     }
@@ -626,6 +713,23 @@ extern "C" {
             return "Invalid model file";
         default:
             return "Unknown error";
+        }
+    }
+
+    UWOT_API const char* uwot_get_metric_name(UwotMetric metric) {
+        switch (metric) {
+        case UWOT_METRIC_EUCLIDEAN:
+            return "euclidean";
+        case UWOT_METRIC_COSINE:
+            return "cosine";
+        case UWOT_METRIC_MANHATTAN:
+            return "manhattan";
+        case UWOT_METRIC_CORRELATION:
+            return "correlation";
+        case UWOT_METRIC_HAMMING:
+            return "hamming";
+        default:
+            return "unknown";
         }
     }
 
