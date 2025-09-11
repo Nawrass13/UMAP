@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  
+  <!-- Copy native libraries directly to output directory, not in runtime subdirectories -->
+  <Target Name="CopyUMAPNativeLibraries" AfterTargets="AfterBuild">
+    
+    <!-- Windows: Copy uwot.dll to root output directory -->
+    <Copy Condition="Exists('$(MSBuildThisFileDirectory)..\runtimes\win-x64\native\uwot.dll')" 
+          SourceFiles="$(MSBuildThisFileDirectory)..\runtimes\win-x64\native\uwot.dll" 
+          DestinationFiles="$(OutputPath)uwot.dll" 
+          SkipUnchangedFiles="true" />
+    
+    <!-- Linux: Copy libuwot.so to root output directory -->
+    <Copy Condition="Exists('$(MSBuildThisFileDirectory)..\runtimes\linux-x64\native\libuwot.so')" 
+          SourceFiles="$(MSBuildThisFileDirectory)..\runtimes\linux-x64\native\libuwot.so" 
+          DestinationFiles="$(OutputPath)libuwot.so" 
+          SkipUnchangedFiles="true" />
+          
+  </Target>
+
+</Project>
