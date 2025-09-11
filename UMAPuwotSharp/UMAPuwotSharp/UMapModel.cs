@@ -137,6 +137,10 @@ namespace UMAPuwotSharp
         /// Loads a UMAP model from a file
         /// </summary>
         /// <param name="filename">Path to the model file</param>
+        /// <returns>A new UMapModel instance loaded from the specified file</returns>
+        /// <exception cref="ArgumentException">Thrown when filename is null or empty</exception>
+        /// <exception cref="FileNotFoundException">Thrown when the specified file does not exist</exception>
+        /// <exception cref="InvalidDataException">Thrown when the file cannot be loaded as a valid model</exception>
         public static UMapModel Load(string filename)
         {
             if (string.IsNullOrEmpty(filename))
@@ -169,6 +173,8 @@ namespace UMAPuwotSharp
         /// <param name="minDist">Minimum distance between points in embedding (default: 0.1)</param>
         /// <param name="nEpochs">Number of optimization epochs (default: 200)</param>
         /// <returns>2D embedding coordinates [samples, 2]</returns>
+        /// <exception cref="ArgumentNullException">Thrown when data is null</exception>
+        /// <exception cref="ArgumentException">Thrown when parameters are invalid</exception>
         public float[,] Fit(float[,] data, int nNeighbors = 15, float minDist = 0.1f, int nEpochs = 200)
         {
             if (data == null)
@@ -215,6 +221,9 @@ namespace UMAPuwotSharp
         /// </summary>
         /// <param name="newData">New data to transform [samples, features]</param>
         /// <returns>2D embedding coordinates [samples, 2]</returns>
+        /// <exception cref="ArgumentNullException">Thrown when newData is null</exception>
+        /// <exception cref="InvalidOperationException">Thrown when model is not fitted</exception>
+        /// <exception cref="ArgumentException">Thrown when feature dimensions don't match training data</exception>
         public float[,] Transform(float[,] newData)
         {
             if (newData == null)
@@ -259,6 +268,9 @@ namespace UMAPuwotSharp
         /// Saves the fitted model to a file
         /// </summary>
         /// <param name="filename">Path where to save the model</param>
+        /// <exception cref="ArgumentException">Thrown when filename is null or empty</exception>
+        /// <exception cref="InvalidOperationException">Thrown when model is not fitted</exception>
+        /// <exception cref="IOException">Thrown when file cannot be written</exception>
         public void Save(string filename)
         {
             if (string.IsNullOrEmpty(filename))
@@ -378,12 +390,19 @@ namespace UMAPuwotSharp
 
         #region IDisposable Implementation
 
+        /// <summary>
+        /// Releases all resources used by the UMapModel
+        /// </summary>
         public void Dispose()
         {
             Dispose(true);
             GC.SuppressFinalize(this);
         }
 
+        /// <summary>
+        /// Releases the unmanaged resources and optionally releases the managed resources
+        /// </summary>
+        /// <param name="disposing">true to release both managed and unmanaged resources; false to release only unmanaged resources</param>
         protected virtual void Dispose(bool disposing)
         {
             if (!_disposed && _nativeModel != IntPtr.Zero)
@@ -394,6 +413,9 @@ namespace UMAPuwotSharp
             }
         }
 
+        /// <summary>
+        /// Finalizer for UMapModel to ensure native resources are cleaned up
+        /// </summary>
         ~UMapModel()
         {
             Dispose(false);
@@ -407,10 +429,29 @@ namespace UMAPuwotSharp
     /// </summary>
     public readonly struct UMapModelInfo
     {
+        /// <summary>
+        /// Gets the number of training samples used to fit this model
+        /// </summary>
         public int TrainingSamples { get; }
+
+        /// <summary>
+        /// Gets the dimensionality of the input data
+        /// </summary>
         public int InputDimension { get; }
+
+        /// <summary>
+        /// Gets the dimensionality of the output embedding (typically 2)
+        /// </summary>
         public int OutputDimension { get; }
+
+        /// <summary>
+        /// Gets the number of nearest neighbors used during training
+        /// </summary>
         public int Neighbors { get; }
+
+        /// <summary>
+        /// Gets the minimum distance parameter used during training
+        /// </summary>
         public float MinimumDistance { get; }
 
         internal UMapModelInfo(int trainingSamples, int inputDimension, int outputDimension, int neighbors, float minimumDistance)
@@ -422,6 +463,10 @@ namespace UMAPuwotSharp
             MinimumDistance = minimumDistance;
         }
 
+        /// <summary>
+        /// Returns a string representation of the model information
+        /// </summary>
+        /// <returns>A formatted string describing the model parameters</returns>
         public override string ToString()
         {
             return $"UMAP Model: {TrainingSamples} samples, {InputDimension}D ? {OutputDimension}D, k={Neighbors}, min_dist={MinimumDistance:F3}";
