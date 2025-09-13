@@ -19,6 +19,19 @@ This implementation addresses these fundamental gaps by providing complete model
 
 A complete, production-ready UMAP (Uniform Manifold Approximation and Projection) implementation based on the high-performance [uwot R package](https://github.com/jlmelville/uwot), providing both standalone C++ libraries and cross-platform C# integration with **enhanced features not available in other C# UMAP libraries**.
 
+## What is UMAP?
+
+UMAP (Uniform Manifold Approximation and Projection) is a dimensionality reduction technique that can be used for visualization, feature extraction, and preprocessing of high-dimensional data. Unlike many other dimensionality reduction algorithms, UMAP excels at preserving both local and global structure in the data.
+
+![UMAP 3D Visualization](Other/rot3DUMAP_alltp_360.gif)
+
+
+*Example: 3D UMAP embedding rotation showing preserved data structure and clustering*
+
+**For an excellent interactive explanation of UMAP, see: [Understanding UMAP](https://pair-code.github.io/understanding-umap/)**
+
+
+
 ## Enhanced Features
 
 ### 🚀 **Arbitrary Embedding Dimensions (1D to 50D)**
@@ -120,14 +133,6 @@ These prebuilt binaries provide:
 - **Immediate deployment**: No compilation required - works out of the box
 - **Cross-platform compatibility**: Automatic runtime detection selects the correct native library
 
-## What is UMAP?
-
-UMAP (Uniform Manifold Approximation and Projection) is a dimensionality reduction technique that can be used for visualization, feature extraction, and preprocessing of high-dimensional data. Unlike many other dimensionality reduction algorithms, UMAP excels at preserving both local and global structure in the data.
-
-![UMAP 3D Visualization](Other/rot3DUMAP_alltp_360.gif)
-*Example: 3D UMAP embedding rotation showing preserved data structure and clustering*
-
-**For an excellent interactive explanation of UMAP, see: [Understanding UMAP](https://pair-code.github.io/understanding-umap/)**
 
 ### UMAP Advantages
 
