@@ -12,7 +12,7 @@
     <!-- Enhanced NuGet metadata -->
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <PackageId>UMAPuwotSharp</PackageId>
-    <Version>3.0.0</Version>
+    <Version>3.0.1</Version>
     <Authors>Amin Gholiha</Authors>
     <Company>ID Soft AB</Company>
     <Product>UMAPuwotSharp Enhanced with HNSW</Product>
@@ -25,28 +25,28 @@
     <PackageProjectUrl>https://github.com/78Spinoza/UMAP</PackageProjectUrl>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageReleaseNotes>
-🚀 MAJOR UPDATE - UMAP v3.0.0 with HNSW Optimization:
+🔧 CRITICAL UPDATE - UMAP v3.0.1: Fixed Linux Library with HNSW
 
-🔥 PERFORMANCE BREAKTHROUGH:
+🚨 IMPORTANT FIX:
+- Fixed Linux native library: Now includes complete HNSW optimization (170KB vs 69KB)
+- All platforms now have identical HNSW performance improvements
+- Cross-platform parity fully achieved
+
+🚀 CONFIRMED FEATURES (All Platforms):
 - HNSW optimization: 50-2000x faster transforms (sub-millisecond speed)
 - Memory reduction: 80-85% less memory usage for production deployments
-- Scalable to 50K+ samples without performance degradation
-
-🛡️ AI/ML PRODUCTION SAFETY:
 - 5-level outlier detection: Normal → Unusual → Mild → Extreme → No Man's Land
 - Real-time data quality assessment for AI model validation
 - Confidence scoring (0.0-1.0) with production readiness flags
 - Distance-based classification/regression using nearest neighbors
-
-⚡ ENHANCED FEATURES:
 - Arbitrary embedding dimensions (1D-50D) with HNSW optimization
 - Multiple distance metrics: Euclidean, Cosine, Manhattan, Correlation, Hamming
 - Complete model persistence with HNSW indices
 - TransformResult class with comprehensive safety analysis
 - Real-time progress reporting with callbacks
-- Cross-platform Windows/Linux with automatic detection
 
-Perfect for production AI pipelines requiring fast transforms and data validation!
+✅ VERIFIED: Both Windows and Linux native libraries now contain full HNSW implementation!
+If you installed v3.0.0, please upgrade to v3.0.1 for complete cross-platform performance.
     </PackageReleaseNotes>
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
     <IncludeSymbols>true</IncludeSymbols>

@@ -84,6 +84,28 @@ cd uwot_pure_cpp
 BuildDockerLinuxWindows.bat        # Cross-platform build
 ```
 
+## ⚠️ **CRITICAL REMINDER: Cross-Platform Builds for NuGet**
+
+**🚨 BEFORE PUBLISHING ANY NUGET PACKAGE:**
+1. **ALWAYS run `BuildDockerLinuxWindows.bat`** - NOT just `Buildwindows.bat`
+2. **Why?** The Docker script builds BOTH Windows AND Linux libraries with HNSW
+3. **Issue experienced:** v3.0.0 shipped with old Linux library (69KB) missing HNSW
+4. **Fixed in v3.0.1:** Proper Linux library (174KB) with complete HNSW optimization
+
+### Build Size Verification:
+- **Windows `uwot.dll`**: ~150KB (with HNSW)
+- **Linux `libuwot.so`**: ~174KB (with HNSW)
+- **Old Linux library**: 69KB (WITHOUT HNSW) ❌
+
+### Required Commands for NuGet Publishing:
+```bash
+cd uwot_pure_cpp
+BuildDockerLinuxWindows.bat      # Build BOTH platforms with HNSW
+cd ../UMAPuwotSharp/UMAPuwotSharp
+dotnet pack --configuration Release
+# Verify both libraries are ~150KB+ before publishing!
+```
+
 ## Current Status
 - ✅ Core UMAP functionality working perfectly
 - ✅ All enhanced features operational (1D-50D, multi-metrics, progress reporting)
@@ -97,11 +119,13 @@ BuildDockerLinuxWindows.bat        # Cross-platform build
 - ✅ **COMPREHENSIVE TESTING**: C++ test suite with HNSW validation, performance testing
 - ✅ **Clean compilation**: All nullability warnings fixed, zero build errors
 - ✅ **PRODUCTION DEPLOYMENT COMPLETE**:
-  - ✅ **NuGet package v3.0.0**: Successfully published to nuget.org
+  - ✅ **NuGet package v3.0.1**: Critical fix published with proper Linux HNSW library
+  - ✅ **Cross-platform parity**: Both Windows (150KB) and Linux (174KB) libraries have HNSW
+  - ✅ **v3.0.0 issue resolved**: Fixed Linux library missing HNSW optimization
   - ✅ **README.md restructured**: Project Motivation first, HNSW details at end
   - ✅ **Git repository updated**: All changes committed and pushed
   - ✅ **Build artifacts cleaned**: Project ready for distribution
-  - ✅ **Performance benchmarks validated**: 50-2000x improvement confirmed
+  - ✅ **Performance benchmarks validated**: 50-2000x improvement confirmed on all platforms
   - ✅ **Memory optimization verified**: 80-85% reduction achieved
 
 ## Known Issues
