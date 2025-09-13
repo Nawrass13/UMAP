@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Linq;
 using UMAPuwotSharp;
 
 namespace UMAPExample
@@ -23,6 +24,9 @@ namespace UMAPExample
 
                 // Demo 4: Different Data Types and Metrics with Progress
                 DemoDistanceMetricsWithProgress();
+
+                // Demo 5: Enhanced Safety Features with HNSW
+                DemoSafetyFeatures();
 
                 Console.WriteLine("\nAll demos completed successfully!");
                 Console.WriteLine("Your enhanced UMAP wrapper is ready for production use!");
@@ -111,7 +115,7 @@ namespace UMAPExample
                 using var model = new UMapModel();
 
                 // Use progress callback for larger dimensions
-                ProgressCallback progressCallback = null;
+                ProgressCallback? progressCallback = null;
                 if (dim >= 20)
                 {
                     progressCallback = (epoch, totalEpochs, percent) =>
@@ -292,6 +296,147 @@ namespace UMAPExample
             }
 
             Console.WriteLine();
+        }
+
+        static void DemoSafetyFeatures()
+        {
+            Console.WriteLine("=== Demo 5: Enhanced Safety Features with HNSW ===");
+
+            // Generate training data with clear patterns
+            var trainData = GenerateTestData(400, 30, DataPattern.Clustered, seed: 123);
+            Console.WriteLine($"Training data: {trainData.GetLength(0)} samples × {trainData.GetLength(1)} features (clustered pattern)");
+
+            using var model = new UMapModel();
+
+            // Train the model
+            Console.WriteLine("Training model for safety analysis...");
+            var trainEmbedding = model.FitWithProgress(
+                trainData,
+                progressCallback: (epoch, totalEpochs, percent) =>
+                {
+                    if (epoch % 30 == 0 || epoch == totalEpochs)
+                    {
+                        Console.Write($"\r  Training: {percent:F0}%");
+                    }
+                },
+                embeddingDimension: 10,
+                nNeighbors: 15,
+                minDist: 0.1f,
+                nEpochs: 200,
+                metric: DistanceMetric.Euclidean
+            );
+
+            Console.WriteLine("\n  Training completed!");
+
+            // Generate different types of test data to demonstrate safety analysis
+            var testScenarios = new[]
+            {
+                (GenerateTestData(5, 30, DataPattern.Clustered, seed: 200), "Similar to training (clustered)", true),
+                (GenerateTestData(5, 30, DataPattern.Standard, seed: 201), "Somewhat different (Gaussian)", false),
+                (GenerateExtremeOutliers(3, 30), "Extreme outliers", false)
+            };
+
+            Console.WriteLine("\nTransform Analysis with Safety Metrics:");
+
+            foreach (var (testData, description, expectedSafe) in testScenarios)
+            {
+                Console.WriteLine($"\n--- {description} ---");
+
+                try
+                {
+                    // Use enhanced transform with safety analysis
+                    var results = model.TransformWithSafety(testData);
+
+                    for (int i = 0; i < results.Length; i++)
+                    {
+                        var result = results[i];
+                        Console.WriteLine($"  Sample {i + 1}:");
+                        Console.WriteLine($"    Confidence: {result.ConfidenceScore:F3}");
+                        Console.WriteLine($"    Severity: {result.Severity}");
+                        Console.WriteLine($"    Percentile: {result.PercentileRank:F1}%");
+                        Console.WriteLine($"    Z-Score: {result.ZScore:F2}");
+                        Console.WriteLine($"    Quality: {result.QualityAssessment}");
+                        Console.WriteLine($"    Production Ready: {(result.IsReliable ? "✓ Yes" : "✗ No")}");
+
+                        // Show embedding coordinates (first 3 dimensions)
+                        var coords = result.ProjectionCoordinates;
+                        var coordStr = string.Join(", ", coords.Take(Math.Min(3, coords.Length)).Select(x => x.ToString("F3")));
+                        if (coords.Length > 3) coordStr += "...";
+                        Console.WriteLine($"    Coordinates: [{coordStr}]");
+
+                        // Show nearest neighbors info
+                        Console.WriteLine($"    Nearest neighbors: {result.NeighborCount} analyzed");
+                        var nearestDist = result.NearestNeighborDistances[0];
+                        Console.WriteLine($"    Closest training point distance: {nearestDist:F3}");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"    Error during transform: {ex.Message}");
+                }
+            }
+
+            // Demonstrate batch processing with safety filtering
+            Console.WriteLine("\n--- Batch Processing with Safety Filtering ---");
+            var batchData = GenerateTestData(20, 30, DataPattern.Standard, seed: 300);
+
+            try
+            {
+                var batchResults = model.TransformWithSafety(batchData);
+
+                var safeCount = batchResults.Count(r => r.IsReliable);
+                var normalCount = batchResults.Count(r => r.Severity == OutlierLevel.Normal);
+                var outlierCount = batchResults.Count(r => r.Severity >= OutlierLevel.Mild);
+
+                Console.WriteLine($"  Processed {batchResults.Length} samples:");
+                Console.WriteLine($"    ✓ Production safe: {safeCount}/{batchResults.Length} ({100.0 * safeCount / batchResults.Length:F1}%)");
+                Console.WriteLine($"    Normal: {normalCount}, Outliers: {outlierCount}");
+
+                // Show distribution of confidence scores
+                var avgConfidence = batchResults.Average(r => r.ConfidenceScore);
+                var minConfidence = batchResults.Min(r => r.ConfidenceScore);
+                var maxConfidence = batchResults.Max(r => r.ConfidenceScore);
+
+                Console.WriteLine($"    Confidence range: {minConfidence:F3} - {maxConfidence:F3} (avg: {avgConfidence:F3})");
+
+                // Show severity distribution
+                var severityGroups = batchResults.GroupBy(r => r.Severity)
+                                                .OrderBy(g => g.Key)
+                                                .Select(g => $"{g.Key}: {g.Count()}")
+                                                .ToArray();
+                Console.WriteLine($"    Severity breakdown: {string.Join(", ", severityGroups)}");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"    Batch processing error: {ex.Message}");
+            }
+
+            Console.WriteLine("\n  Safety analysis demonstrates:");
+            Console.WriteLine("  • Real-time outlier detection for production safety");
+            Console.WriteLine("  • Confidence scoring for reliability assessment");
+            Console.WriteLine("  • Multi-level severity classification");
+            Console.WriteLine("  • Nearest neighbor analysis for interpretability");
+            Console.WriteLine("  • Quality assessment for decision making");
+
+            Console.WriteLine();
+        }
+
+        static float[,] GenerateExtremeOutliers(int nSamples, int nFeatures, int seed = 999)
+        {
+            var random = new Random(seed);
+            var data = new float[nSamples, nFeatures];
+
+            for (int i = 0; i < nSamples; i++)
+            {
+                for (int j = 0; j < nFeatures; j++)
+                {
+                    // Generate extreme values far from typical training data
+                    var sign = random.NextDouble() < 0.5 ? -1 : 1;
+                    data[i, j] = sign * (float)(10 + random.NextDouble() * 5); // Values in range [-15, -10] or [10, 15]
+                }
+            }
+
+            return data;
         }
 
         static float[,] GenerateTestData(int nSamples, int nFeatures, DataPattern pattern, int seed = 42)

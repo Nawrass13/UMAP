@@ -88,7 +88,7 @@ echo   Copying Files to C# Project
 echo ===========================================
 echo.
 
-REM Copy DLL to C# project base folder
+REM Copy DLL directly to C# project folder
 if exist "build\Release\uwot.dll" (
     if exist "..\UMAPuwotSharp\UMAPuwotSharp\" (
         copy "build\Release\uwot.dll" "..\UMAPuwotSharp\UMAPuwotSharp\" >nul

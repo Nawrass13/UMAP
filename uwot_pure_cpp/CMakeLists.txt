@@ -101,19 +101,31 @@ if(BUILD_TESTS)
         ${CMAKE_CURRENT_SOURCE_DIR}/enhanced_test.cpp
     )
     target_link_libraries(test_enhanced_wrapper uwot_wrapper)
-    
-    # Suppress warnings for test executable too
+
+    # Error handling test
+    add_executable(test_error_handling
+        ${CMAKE_CURRENT_SOURCE_DIR}/../test_error_handling.cpp
+    )
+    target_link_libraries(test_error_handling uwot_wrapper)
+
+    # Suppress warnings for test executables
     if(MSVC)
-        target_compile_options(test_enhanced_wrapper PRIVATE 
+        target_compile_options(test_enhanced_wrapper PRIVATE
             /wd4244  # conversion warnings
-            /wd4267  # size_t conversion warnings  
+            /wd4267  # size_t conversion warnings
+            /wd4566  # unicode character warnings
+        )
+        target_compile_options(test_error_handling PRIVATE
+            /wd4244  # conversion warnings
+            /wd4267  # size_t conversion warnings
             /wd4566  # unicode character warnings
         )
     endif()
-    
-    # Add test
+
+    # Add tests
     enable_testing()
     add_test(NAME EnhancedWrapperTest COMMAND test_enhanced_wrapper)
+    add_test(NAME ErrorHandlingTest COMMAND test_error_handling)
 endif()
 
 # Package configuration
