@@ -402,3 +402,9 @@ dotnet pack UMAPuwotSharp/UMAPuwotSharp.csproj
 3. **Phase 3**: C# API updates and TransformResult class
 4. **Phase 4**: Build system updates and cross-platform testing
 5. **Phase 5**: Performance validation and documentation
+
+## Git Commit Guidelines
+- Keep commit messages clean and professional
+- NEVER add Claude AI attribution or AI-generated footers to commits
+- Focus on technical changes and their impact
+- Use conventional commit format when appropriate

@@ -1,21 +1,35 @@
 @echo off
 setlocal enabledelayedexpansion
-echo Publishing UMAP v3.1.0 NuGet Package to NuGet.org
+echo Publishing UMAP NuGet Package to NuGet.org
 echo.
 
-REM Validate the package exists
-if not exist "UMAPuwotSharp\bin\Release\UMAPuwotSharp.3.1.0.nupkg" (
-    echo ❌ NuGet package not found! Run build_nuget.bat first.
+REM Find the latest UMAPuwotSharp package
+for /f %%i in ('dir /b /o-n "UMAPuwotSharp\bin\Release\UMAPuwotSharp.*.nupkg" 2^>nul') do (
+    set "LATEST_PACKAGE=%%i"
+    goto :found_package
+)
+
+:found_package
+if "!LATEST_PACKAGE!"=="" (
+    echo ❌ No NuGet package found! Run build_nuget.bat first.
     pause
     exit /b 1
 )
 
-echo ✅ Package found: UMAPuwotSharp.3.1.0.nupkg
+REM Extract version from filename
+for /f "tokens=2 delims=." %%a in ("!LATEST_PACKAGE!") do (
+    for /f "tokens=1,2,3 delims=." %%b in ("%%a") do (
+        set "VERSION=%%b.%%c.%%d"
+    )
+)
+
+echo ✅ Package found: !LATEST_PACKAGE! (v!VERSION!)
 echo.
 
 REM Show package details
 echo Package Information:
-dir UMAPuwotSharp\bin\Release\UMAPuwotSharp.3.1.0.*
+dir "UMAPuwotSharp\bin\Release\!LATEST_PACKAGE!"
+dir "UMAPuwotSharp\bin\Release\UMAPuwotSharp.!VERSION!.snupkg" 2>nul
 echo.
 
 echo 🚀 READY TO PUBLISH TO NUGET.ORG!
@@ -52,18 +66,18 @@ REM Change to the package directory
 cd UMAPuwotSharp\bin\Release
 
 REM Execute the publish command
-dotnet nuget push UMAPuwotSharp.3.1.0.nupkg --source https://api.nuget.org/v3/index.json --api-key "!apikey!"
+dotnet nuget push "!LATEST_PACKAGE!" --source https://api.nuget.org/v3/index.json --api-key "!apikey!"
 
 if !ERRORLEVEL! EQU 0 (
     echo.
     echo 🎉 SUCCESS! Package published successfully!
     echo.
     echo 📍 Your package is now available at:
-    echo    https://www.nuget.org/packages/UMAPuwotSharp/3.1.0
+    echo    https://www.nuget.org/packages/UMAPuwotSharp/!VERSION!
     echo.
     echo ⏰ Note: It may take a few minutes to appear in search results.
     echo.
-    echo 🚀 Your revolutionary UMAP v3.1.0 with HNSW optimization is now live!
+    echo 🚀 Your revolutionary UMAP v!VERSION! with HNSW optimization is now live!
 ) else (
     echo.
     echo ❌ Publishing failed! Error code: !ERRORLEVEL!

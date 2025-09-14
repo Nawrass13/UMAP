@@ -43,8 +43,8 @@ namespace UMAPExample
             Console.WriteLine("=== Demo 1: 27D Embedding with Progress Reporting ===");
 
             // Generate sample high-dimensional data
-            const int nSamples = 1000;
-            const int nFeatures = 100;
+            const int nSamples = 10000;
+            const int nFeatures = 300;
             const int embeddingDim = 27;
 
             var data = GenerateTestData(nSamples, nFeatures, DataPattern.Clustered);
