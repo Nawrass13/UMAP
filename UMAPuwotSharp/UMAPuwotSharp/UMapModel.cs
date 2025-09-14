@@ -206,10 +206,10 @@ namespace UMAPuwotSharp
         private static extern IntPtr WindowsCreate();
 
         [DllImport(WindowsDll, CallingConvention = CallingConvention.Cdecl, EntryPoint = "uwot_fit")]
-        private static extern int WindowsFit(IntPtr model, float[] data, int nObs, int nDim, int embeddingDim, int nNeighbors, float minDist, int nEpochs, DistanceMetric metric, float[] embedding);
+        private static extern int WindowsFit(IntPtr model, float[] data, int nObs, int nDim, int embeddingDim, int nNeighbors, float minDist, int nEpochs, DistanceMetric metric, float[] embedding, int forceExactKnn);
 
         [DllImport(WindowsDll, CallingConvention = CallingConvention.Cdecl, EntryPoint = "uwot_fit_with_progress")]
-        private static extern int WindowsFitWithProgress(IntPtr model, float[] data, int nObs, int nDim, int embeddingDim, int nNeighbors, float minDist, int nEpochs, DistanceMetric metric, float[] embedding, NativeProgressCallback progressCallback);
+        private static extern int WindowsFitWithProgress(IntPtr model, float[] data, int nObs, int nDim, int embeddingDim, int nNeighbors, float minDist, int nEpochs, DistanceMetric metric, float[] embedding, NativeProgressCallback progressCallback, int forceExactKnn);
 
         [DllImport(WindowsDll, CallingConvention = CallingConvention.Cdecl, EntryPoint = "uwot_transform")]
         private static extern int WindowsTransform(IntPtr model, float[] newData, int nNewObs, int nDim, float[] embedding);
@@ -243,10 +243,10 @@ namespace UMAPuwotSharp
         private static extern IntPtr LinuxCreate();
 
         [DllImport(LinuxDll, CallingConvention = CallingConvention.Cdecl, EntryPoint = "uwot_fit")]
-        private static extern int LinuxFit(IntPtr model, float[] data, int nObs, int nDim, int embeddingDim, int nNeighbors, float minDist, int nEpochs, DistanceMetric metric, float[] embedding);
+        private static extern int LinuxFit(IntPtr model, float[] data, int nObs, int nDim, int embeddingDim, int nNeighbors, float minDist, int nEpochs, DistanceMetric metric, float[] embedding, int forceExactKnn);
 
         [DllImport(LinuxDll, CallingConvention = CallingConvention.Cdecl, EntryPoint = "uwot_fit_with_progress")]
-        private static extern int LinuxFitWithProgress(IntPtr model, float[] data, int nObs, int nDim, int embeddingDim, int nNeighbors, float minDist, int nEpochs, DistanceMetric metric, float[] embedding, NativeProgressCallback progressCallback);
+        private static extern int LinuxFitWithProgress(IntPtr model, float[] data, int nObs, int nDim, int embeddingDim, int nNeighbors, float minDist, int nEpochs, DistanceMetric metric, float[] embedding, NativeProgressCallback progressCallback, int forceExactKnn);
 
         [DllImport(LinuxDll, CallingConvention = CallingConvention.Cdecl, EntryPoint = "uwot_transform")]
         private static extern int LinuxTransform(IntPtr model, float[] newData, int nNewObs, int nDim, float[] embedding);
@@ -375,6 +375,7 @@ namespace UMAPuwotSharp
         /// <param name="minDist">Minimum distance between points in embedding (default: 0.1)</param>
         /// <param name="nEpochs">Number of optimization epochs (default: 300)</param>
         /// <param name="metric">Distance metric to use (default: Euclidean)</param>
+        /// <param name="forceExactKnn">Force exact brute-force k-NN instead of HNSW approximation (default: false). Use for validation or small datasets.</param>
         /// <returns>Embedding coordinates [samples, embeddingDimension]</returns>
         /// <exception cref="ArgumentNullException">Thrown when data is null</exception>
         /// <exception cref="ArgumentException">Thrown when parameters are invalid</exception>
@@ -383,9 +384,10 @@ namespace UMAPuwotSharp
                           int nNeighbors = 15,
                           float minDist = 0.1f,
                           int nEpochs = 300,
-                          DistanceMetric metric = DistanceMetric.Euclidean)
+                          DistanceMetric metric = DistanceMetric.Euclidean,
+                          bool forceExactKnn = false)
         {
-            return FitInternal(data, embeddingDimension, nNeighbors, minDist, nEpochs, metric, progressCallback: null);
+            return FitInternal(data, embeddingDimension, nNeighbors, minDist, nEpochs, metric, forceExactKnn, progressCallback: null);
         }
 
         /// <summary>
@@ -398,6 +400,7 @@ namespace UMAPuwotSharp
         /// <param name="minDist">Minimum distance between points in embedding (default: 0.1)</param>
         /// <param name="nEpochs">Number of optimization epochs (default: 300)</param>
         /// <param name="metric">Distance metric to use (default: Euclidean)</param>
+        /// <param name="forceExactKnn">Force exact brute-force k-NN instead of HNSW approximation (default: false). Use for validation or small datasets.</param>
         /// <returns>Embedding coordinates [samples, embeddingDimension]</returns>
         /// <exception cref="ArgumentNullException">Thrown when data or progressCallback is null</exception>
         /// <exception cref="ArgumentException">Thrown when parameters are invalid</exception>
@@ -407,12 +410,13 @@ namespace UMAPuwotSharp
                                       int nNeighbors = 15,
                                       float minDist = 0.1f,
                                       int nEpochs = 300,
-                                      DistanceMetric metric = DistanceMetric.Euclidean)
+                                      DistanceMetric metric = DistanceMetric.Euclidean,
+                                      bool forceExactKnn = false)
         {
             if (progressCallback == null)
                 throw new ArgumentNullException(nameof(progressCallback));
 
-            return FitInternal(data, embeddingDimension, nNeighbors, minDist, nEpochs, metric, progressCallback);
+            return FitInternal(data, embeddingDimension, nNeighbors, minDist, nEpochs, metric, forceExactKnn, progressCallback);
         }
 
         /// <summary>
@@ -595,6 +599,7 @@ namespace UMAPuwotSharp
                                    float minDist,
                                    int nEpochs,
                                    DistanceMetric metric,
+                                   bool forceExactKnn,
                                    ProgressCallback? progressCallback)
         {
             if (data == null)
@@ -648,11 +653,11 @@ namespace UMAPuwotSharp
                     }
                 };
 
-                result = CallFitWithProgress(_nativeModel, flatData, nSamples, nFeatures, embeddingDimension, nNeighbors, minDist, nEpochs, metric, embedding, nativeCallback);
+                result = CallFitWithProgress(_nativeModel, flatData, nSamples, nFeatures, embeddingDimension, nNeighbors, minDist, nEpochs, metric, embedding, nativeCallback, forceExactKnn ? 1 : 0);
             }
             else
             {
-                result = CallFit(_nativeModel, flatData, nSamples, nFeatures, embeddingDimension, nNeighbors, minDist, nEpochs, metric, embedding);
+                result = CallFit(_nativeModel, flatData, nSamples, nFeatures, embeddingDimension, nNeighbors, minDist, nEpochs, metric, embedding, forceExactKnn ? 1 : 0);
             }
 
             ThrowIfError(result);
@@ -672,17 +677,17 @@ namespace UMAPuwotSharp
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static int CallFit(IntPtr model, float[] data, int nObs, int nDim, int embeddingDim, int nNeighbors, float minDist, int nEpochs, DistanceMetric metric, float[] embedding)
+        private static int CallFit(IntPtr model, float[] data, int nObs, int nDim, int embeddingDim, int nNeighbors, float minDist, int nEpochs, DistanceMetric metric, float[] embedding, int forceExactKnn)
         {
-            return IsWindows ? WindowsFit(model, data, nObs, nDim, embeddingDim, nNeighbors, minDist, nEpochs, metric, embedding)
-                             : LinuxFit(model, data, nObs, nDim, embeddingDim, nNeighbors, minDist, nEpochs, metric, embedding);
+            return IsWindows ? WindowsFit(model, data, nObs, nDim, embeddingDim, nNeighbors, minDist, nEpochs, metric, embedding, forceExactKnn)
+                             : LinuxFit(model, data, nObs, nDim, embeddingDim, nNeighbors, minDist, nEpochs, metric, embedding, forceExactKnn);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static int CallFitWithProgress(IntPtr model, float[] data, int nObs, int nDim, int embeddingDim, int nNeighbors, float minDist, int nEpochs, DistanceMetric metric, float[] embedding, NativeProgressCallback progressCallback)
+        private static int CallFitWithProgress(IntPtr model, float[] data, int nObs, int nDim, int embeddingDim, int nNeighbors, float minDist, int nEpochs, DistanceMetric metric, float[] embedding, NativeProgressCallback progressCallback, int forceExactKnn)
         {
-            return IsWindows ? WindowsFitWithProgress(model, data, nObs, nDim, embeddingDim, nNeighbors, minDist, nEpochs, metric, embedding, progressCallback)
-                             : LinuxFitWithProgress(model, data, nObs, nDim, embeddingDim, nNeighbors, minDist, nEpochs, metric, embedding, progressCallback);
+            return IsWindows ? WindowsFitWithProgress(model, data, nObs, nDim, embeddingDim, nNeighbors, minDist, nEpochs, metric, embedding, progressCallback, forceExactKnn)
+                             : LinuxFitWithProgress(model, data, nObs, nDim, embeddingDim, nNeighbors, minDist, nEpochs, metric, embedding, progressCallback, forceExactKnn);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

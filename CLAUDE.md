@@ -76,12 +76,31 @@ public class TransformResult {
 cd UMAPuwotSharp
 dotnet build                       # Build library and example
 dotnet run --project UMAPuwotSharp.Example  # Run demo
+dotnet test                        # Run comprehensive test suite
 ```
 
-### C++ Native Library (Advanced)
+### C++ Native Library Development & Testing
+**Primary Method - CMake (Windows/Linux):**
 ```bash
 cd uwot_pure_cpp
-BuildDockerLinuxWindows.bat        # Cross-platform build
+mkdir build && cd build
+cmake .. -DBUILD_TESTS=ON
+cmake --build . --config Release
+ctest                              # Run C++ validation tests
+```
+
+**For NuGet Publication (Cross-platform):**
+```bash
+cd uwot_pure_cpp
+BuildDockerLinuxWindows.bat        # Builds BOTH Windows AND Linux with HNSW
+```
+
+**Visual Studio (Windows Alternative):**
+```bash
+cd uwot_pure_cpp
+mkdir build && cd build
+cmake .. -G "Visual Studio 17 2022" -A x64 -DBUILD_TESTS=ON
+cmake --build . --config Release
 ```
 
 ## ⚠️ **CRITICAL REMINDER: Cross-Platform Builds for NuGet**
@@ -107,26 +126,51 @@ dotnet pack --configuration Release
 ```
 
 ## Current Status
+
+### ✅ COMPLETED ACHIEVEMENTS (v3.0.1)
 - ✅ Core UMAP functionality working perfectly
 - ✅ All enhanced features operational (1D-50D, multi-metrics, progress reporting)
 - ✅ Cross-platform binaries included (Windows/Linux)
 - ✅ Demo application runs successfully
 - ✅ HNSW library headers downloaded (7 files from nmslib/hnswlib)
-- ✅ **HNSW INTEGRATION COMPLETED**: Direct filestream operations, no temp file management issues
-- ✅ **ENHANCED API COMPLETED**: TransformResult class, OutlierLevel enum, safety metrics
-- ✅ **C# INTEGRATION READY**: P/Invoke declarations, enhanced examples, runtime binaries
-- ✅ **BUILD SYSTEM ENHANCED**: Automated binary copying to runtime folders
-- ✅ **COMPREHENSIVE TESTING**: C++ test suite with HNSW validation, performance testing
-- ✅ **Clean compilation**: All nullability warnings fixed, zero build errors
-- ✅ **PRODUCTION DEPLOYMENT COMPLETE**:
+- ✅ **HNSW Transform Optimization**: Direct filestream operations for transform safety
+- ✅ **Enhanced API**: TransformResult class, OutlierLevel enum, safety metrics
+- ✅ **C# Integration**: P/Invoke declarations, enhanced examples, runtime binaries
+- ✅ **Build System**: Automated binary copying to runtime folders
+- ✅ **Testing Infrastructure**: C++ test suite with HNSW validation, performance testing
+- ✅ **Clean Compilation**: All nullability warnings fixed, zero build errors
+- ✅ **Production Deployment v3.0.1**:
   - ✅ **NuGet package v3.0.1**: Critical fix published with proper Linux HNSW library
   - ✅ **Cross-platform parity**: Both Windows (150KB) and Linux (174KB) libraries have HNSW
   - ✅ **v3.0.0 issue resolved**: Fixed Linux library missing HNSW optimization
   - ✅ **README.md restructured**: Project Motivation first, HNSW details at end
   - ✅ **Git repository updated**: All changes committed and pushed
   - ✅ **Build artifacts cleaned**: Project ready for distribution
-  - ✅ **Performance benchmarks validated**: 50-2000x improvement confirmed on all platforms
-  - ✅ **Memory optimization verified**: 80-85% reduction achieved
+  - ✅ **Transform Performance**: 50-2000x improvement confirmed (50-200ms → <3ms)
+  - ✅ **Memory optimization**: 80-85% reduction achieved for transforms
+
+### 🚨 CRITICAL DISCOVERY: Training k-NN Bottleneck (September 2024)
+**MAJOR SCALABILITY ISSUE IDENTIFIED**:
+- ✅ **Transform performance**: Already optimized with HNSW (50-2000x faster)
+- ❌ **Training performance**: Still uses brute-force O(n²·d) k-NN computation
+- ❌ **Training bottleneck**: 100k × 300d = ~3×10¹² operations (hours/days)
+- ❌ **HNSW underutilized**: Index built but only used for transform statistics, not training k-NN
+
+**ROOT CAUSE ANALYSIS**:
+```cpp
+// In uwot_fit_with_progress() - LINE 555
+build_knn_graph(input_data, n_obs, n_dim, n_neighbors, metric,
+    nn_indices, nn_distances);  // ❌ BRUTE-FORCE O(n²)
+
+// HNSW index exists but unused for training:
+model->ann_index = std::make_unique<hnswlib::HierarchicalNSW<float>>(...);  // ✅ Built
+// But build_knn_graph() ignores it completely! ❌
+```
+
+**IMPACT ASSESSMENT**:
+- ✅ **Small datasets** (n<10k): Works fine, ~seconds
+- ❌ **Large datasets** (n>50k): Fails scalability, hours/timeout
+- ❌ **Production readiness**: Limited to small-scale deployments
 
 ## Known Issues
 - ✅ ~~`CS8625` warning in `UMAPuwotSharp/UMAPuwotSharp/UMapModel.cs:247`~~ - **FIXED**: Proper nullable parameter handling
@@ -134,72 +178,149 @@ dotnet pack --configuration Release
 
 ## Next Steps
 
-### 🎯 ✅ HNSW OPTIMIZATION (COMPLETED!)
-**Implementation Checklist - ALL COMPLETED**:
-- ✅ **C++ Structure Updates**
-  - ✅ Updated UwotModel with HNSW index (`std::unique_ptr<hnswlib::HierarchicalNSW<float>>`)
-  - ✅ Added normalization vectors (`feature_means`, `feature_stds`)
-  - ✅ Added safety statistics (distance thresholds, percentiles)
-  - ✅ Included HNSW headers in uwot_simple_wrapper.cpp
-- ✅ **C++ Training Function**
-  - ✅ Moved normalization calculation from C# to C++
-  - ✅ Built HNSW index during training
-  - ✅ Computed neighbor distance statistics for outlier detection
-  - ✅ Updated save/load to exclude training data, include statistics
-- ✅ **C++ Transform Function**
-  - ✅ Implemented internal normalization
-  - ✅ HNSW approximate nearest neighbor search
-  - ✅ Statistical safety analysis (confidence, outlier level, percentile rank)
-  - ✅ Returned comprehensive TransformResult data
-- ✅ **C# API Updates**
-  - ✅ Created TransformResult class with OutlierLevel enum
-  - ✅ Removed normalization logic from UMapModel.cs
-  - ✅ Updated P/Invoke declarations for new C++ functions
-  - ✅ Updated example code to use enhanced safety features
-- ✅ **Build & Test**
-  - ✅ Updated CMakeLists.txt with HNSW integration
-  - ✅ Verified Windows 64-bit and Linux compatibility
-  - ✅ Updated C++ test file for HNSW validation
-  - ✅ Performance testing: memory usage and transform speed
+### 🎯 ✅ HNSW TRANSFORM OPTIMIZATION (COMPLETED v3.0.1)
+**Previous Implementation - Transform Only**:
+- ✅ **Transform Performance**: 50-200ms → <3ms (50-2000x improvement)
+- ✅ **Transform Memory**: 240MB → 15-45MB (80-85% reduction)
+- ✅ **Safety Features**: Multi-level outlier detection operational
+- ✅ **Production Ready**: NuGet v3.0.1 published and validated
 
-**✅ ACHIEVED RESULTS**:
-- ✅ Memory: 240MB → 15-45MB (80-85% reduction achieved!)
-- ✅ Transform speed: 50-200ms → <3ms (50-2000x improvement achieved!)
-- ✅ Enhanced safety: Multi-level outlier detection operational
-- ✅ NuGet Package v3.0.0: Successfully published to nuget.org
+### 🎯 🚨 PRIORITY 1: TRAINING k-NN OPTIMIZATION (CURRENT CRITICAL FOCUS)
+**THE NEXT BREAKTHROUGH**: Replace brute-force training k-NN with HNSW approximation
 
-### 🎯 PRIORITY 1: Documentation & Community (Current Focus)
-- [ ] **Documentation improvements**:
-  - [ ] Document TransformResult safety features
-  - [ ] Create performance characteristics guide
-  - [ ] Add outlier detection interpretation guide
-- [ ] **Community engagement**:
-  - [ ] Monitor NuGet package adoption
-  - [ ] Respond to community feedback and issues
-  - [ ] Create additional usage examples
+**IMPLEMENTATION PLAN - 22 Tasks Identified**:
 
-### Priority 2: Testing & Quality (Ongoing)
-- ✅ **HNSW-specific testing** (Completed):
-  - ✅ Validated transform accuracy vs linear search
-  - ✅ Tested outlier detection reliability
-  - ✅ Benchmarked memory usage across dataset sizes
-- [ ] **Extended testing**:
-  - [ ] Add unit tests for multi-dimensional embeddings (especially 27D)
-  - [ ] Create performance benchmarks for different dimensions/metrics
-  - [ ] Test memory usage patterns with large datasets
-  - [ ] Validate model persistence across different scenarios
+#### **Phase 1: Core C++ Infrastructure (Tasks 1-9)**
+- [x] ✅ **Architecture Design**: HNSW k-NN integration strategy completed
+- [ ] **Custom L1Space**: Implement Manhattan distance for HNSW
+- [ ] **Force Exact Flag**: Add `force_exact_knn` parameter override
+- [ ] **Enhanced Progress**: Phase-aware reporting with time estimates
+- [ ] **Multi-Space Support**: Euclidean/Cosine/Manhattan space selection
+- [ ] **Unified Pipeline**: Single normalized dataset for all operations
+- [ ] **HNSW k-NN Replacement**: Replace `build_knn_graph()` brute-force
+- [ ] **Warning System**: Time estimates and complexity warnings
+- [ ] **OpenMP Integration**: Parallel HNSW operations
 
-### Priority 3: Advanced Features (Future)
-- [ ] Add more usage examples for different distance metrics
-- [ ] Document best practices for choosing embedding dimensions
-- [ ] Add troubleshooting section for common issues
+#### **Phase 2: C# Integration (Tasks 10)**
+- [ ] **API Extensions**: Add `forceExactKnn` parameter to UMapModel.Fit()
 
-### Future Enhancements
-- [ ] GPU acceleration support investigation
-- [ ] Additional distance metrics (if needed)
-- [ ] Streaming/incremental learning capabilities
-- [ ] Python bindings for broader ecosystem support
-- [ ] Web assembly port for browser usage
+#### **Phase 3: Testing & Validation (Tasks 11-16)**
+- [ ] **Accuracy Validation**: MSE < 0.01 for exact vs approximate
+- [ ] **Performance Benchmarks**: 1k, 10k, 50k, 100k dataset testing
+- [ ] **Memory Testing**: Validate additional memory reductions
+- [ ] **Cross-platform**: Windows/Linux build verification
+
+#### **Phase 4: Documentation & Deployment (Tasks 17-22)**
+- [ ] **Documentation**: README updates, API guides
+- [ ] **NuGet v3.1.0**: New package with training optimization
+- [ ] **Git Integration**: Commit and push all improvements
+
+**🎯 EXPECTED BREAKTHROUGH RESULTS**:
+- **Training Speed**: Hours/days → minutes (50-2000x improvement)
+- **Training Memory**: Additional 60-80% reduction possible
+- **Scalability**: 100k+ datasets becomes feasible
+- **Production Ready**: True large-scale deployment capability
+
+### 🎯 PRIORITY 2: Documentation & Community (Secondary Focus)
+- [ ] **Enhanced Documentation**:
+  - [ ] Document new k-NN approximation features
+  - [ ] Create performance comparison guides (exact vs approximate)
+  - [ ] Add force exact flag usage guidelines
+  - [ ] Document metric-specific recommendations
+- [ ] **Community Engagement**:
+  - [ ] Monitor NuGet package adoption and feedback
+  - [ ] Create large-dataset usage examples
+  - [ ] Add troubleshooting guide for performance issues
+
+### 🎯 PRIORITY 3: Advanced Features (Future Enhancements)
+- [ ] **Additional Optimizations**:
+  - [ ] SIMD vectorization for distance computations
+  - [ ] GPU acceleration investigation
+  - [ ] Batch processing for multiple transforms
+- [ ] **Extended Capabilities**:
+  - [ ] Streaming/incremental learning
+  - [ ] Python bindings for broader ecosystem
+  - [ ] Web assembly port for browser usage
+
+## Detailed Implementation Architecture
+
+### **Current Bottleneck Analysis**
+```cpp
+// CURRENT IMPLEMENTATION - uwot_simple_wrapper.cpp:555
+build_knn_graph(input_data, n_obs, n_dim, n_neighbors, metric,
+    nn_indices, nn_distances);
+```
+
+**Performance Analysis**:
+- **Complexity**: O(n² × d) brute-force distance computation
+- **100k × 300d dataset**: ~3×10¹² operations
+- **Estimated time**: Hours to days on CPU
+- **Memory impact**: Stores full distance matrices temporarily
+
+### **Proposed HNSW Integration Architecture**
+
+#### **Multi-Space HNSW Support**
+```cpp
+struct UwotModel {
+    // Multi-space support for different metrics
+    std::unique_ptr<hnswlib::L2Space> l2_space;           // Euclidean
+    std::unique_ptr<hnswlib::InnerProductSpace> ip_space; // Cosine
+    std::unique_ptr<L1Space> l1_space;                    // Manhattan (custom)
+
+    // Unified HNSW index
+    std::unique_ptr<hnswlib::HierarchicalNSW<float>> ann_index;
+
+    // Control flags
+    bool force_exact_knn;                                 // Override flag
+    std::vector<float> normalized_training_data;          // Unified pipeline
+};
+```
+
+#### **Enhanced Progress Callback**
+```cpp
+typedef void (*uwot_progress_callback_v2)(
+    const char* phase,        // "Building HNSW", "k-NN Graph", etc.
+    int current, int total,   // Progress counters
+    float percent,            // 0-100%
+    const char* message       // Time estimates, warnings, or NULL
+);
+```
+
+#### **Custom L1Space Implementation**
+```cpp
+class L1Space : public hnswlib::SpaceInterface<float> {
+    // Manhattan distance implementation for HNSW
+    // Optimized with potential SIMD vectorization
+};
+```
+
+#### **Algorithm Flow Optimization**
+```
+uwot_fit_with_progress_v2:
+├── 1. Data Normalization
+│   └── Progress: "Normalizing data" (est: <1s)
+├── 2. HNSW Space Selection & Build
+│   ├── Select: L2Space|InnerProductSpace|L1Space
+│   ├── Build index with progress (est: minutes)
+│   └── Warn if metric unsupported
+├── 3. k-NN Graph Construction ⚡ KEY OPTIMIZATION
+│   ├── If supported + !force_exact: HNSW queries (FAST)
+│   ├── Else: Brute-force with warnings (SLOW)
+│   └── Progress with time estimates
+├── 4. Remaining UMAP pipeline
+│   └── Edge conversion, optimization (existing)
+└── 5. Memory cleanup
+    └── Remove training data storage
+```
+
+### **Metric Support Matrix**
+| Metric | HNSW Space | Speed | Accuracy | Status |
+|--------|------------|-------|----------|---------|
+| Euclidean | L2Space | 50-2000x | High | ✅ Supported |
+| Cosine | InnerProductSpace | 50-2000x | High | ✅ Supported |
+| Manhattan | L1Space (custom) | 50-2000x | High | 🔄 Implementing |
+| Correlation | Brute-force only | 1x | Exact | ⚠️ Slow for n>10k |
+| Hamming | Brute-force only | 1x | Exact | ⚠️ Slow for n>10k |
 
 ## Key Features Demo Commands
 ```bash

@@ -97,15 +97,26 @@ install(FILES ${UWOT_CORE_HEADERS}
 
 # Tests
 if(BUILD_TESTS)
+    # Enhanced wrapper test (existing)
     add_executable(test_enhanced_wrapper
         ${CMAKE_CURRENT_SOURCE_DIR}/enhanced_test.cpp
     )
     target_link_libraries(test_enhanced_wrapper uwot_wrapper)
 
+    # HNSW validation test (comprehensive)
+    add_executable(hnsw_validation_test
+        ${CMAKE_CURRENT_SOURCE_DIR}/hnsw_validation_test.cpp
+    )
+    target_link_libraries(hnsw_validation_test uwot_wrapper)
 
     # Suppress warnings for test executables
     if(MSVC)
         target_compile_options(test_enhanced_wrapper PRIVATE
+            /wd4244  # conversion warnings
+            /wd4267  # size_t conversion warnings
+            /wd4566  # unicode character warnings
+        )
+        target_compile_options(hnsw_validation_test PRIVATE
             /wd4244  # conversion warnings
             /wd4267  # size_t conversion warnings
             /wd4566  # unicode character warnings
@@ -115,6 +126,7 @@ if(BUILD_TESTS)
     # Add tests
     enable_testing()
     add_test(NAME EnhancedWrapperTest COMMAND test_enhanced_wrapper)
+    add_test(NAME HNSWValidationTest COMMAND hnsw_validation_test)
 endif()
 
 # Package configuration

@@ -46,8 +46,17 @@ extern "C" {
     // Forward declaration
     typedef struct UwotModel UwotModel;
 
-    // Progress callback function type
+    // Progress callback function types
     typedef void (*uwot_progress_callback)(int epoch, int total_epochs, float percent);
+
+    // Enhanced progress callback with phase information, time estimates, and warnings
+    typedef void (*uwot_progress_callback_v2)(
+        const char* phase,        // Current phase: "Normalizing", "Building HNSW", "k-NN Graph", etc.
+        int current,              // Current progress counter
+        int total,                // Total items to process
+        float percent,            // Progress percentage (0-100)
+        const char* message       // Time estimates, warnings, or NULL for no message
+    );
 
     // Core functions
     UWOT_API UwotModel* uwot_create();
@@ -63,7 +72,8 @@ extern "C" {
         float min_dist,
         int n_epochs,
         UwotMetric metric,
-        float* embedding);
+        float* embedding,
+        int force_exact_knn = 0);
 
     UWOT_API int uwot_fit_with_progress(UwotModel* model,
         float* data,
@@ -75,7 +85,22 @@ extern "C" {
         int n_epochs,
         UwotMetric metric,
         float* embedding,
-        uwot_progress_callback progress_callback);
+        uwot_progress_callback progress_callback,
+        int force_exact_knn = 0);
+
+    // Enhanced training functions with detailed progress reporting
+    UWOT_API int uwot_fit_with_enhanced_progress(UwotModel* model,
+        float* data,
+        int n_obs,
+        int n_dim,
+        int embedding_dim,
+        int n_neighbors,
+        float min_dist,
+        int n_epochs,
+        UwotMetric metric,
+        float* embedding,
+        uwot_progress_callback_v2 progress_callback,
+        int force_exact_knn = 0);
 
     // Transform functions
     UWOT_API int uwot_transform(UwotModel* model,
