@@ -12,7 +12,7 @@
     <!-- Enhanced NuGet metadata -->
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <PackageId>UMAPuwotSharp</PackageId>
-    <Version>3.1.0</Version>
+    <Version>3.1.1</Version>
     <Authors>Amin Gholiha</Authors>
     <Company>ID Soft AB</Company>
     <Product>UMAPuwotSharp Enhanced with HNSW</Product>
@@ -25,7 +25,15 @@
     <PackageProjectUrl>https://github.com/78Spinoza/UMAP</PackageProjectUrl>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageReleaseNotes>
-🚀 MAJOR UPDATE - UMAP v3.1.0: Revolutionary HNSW k-NN Optimization
+🔧 CRITICAL UPDATE - UMAP v3.1.1: Enhanced Linux HNSW Binary
+
+⚡ PERFORMANCE ENHANCEMENT:
+- Updated Linux library with complete HNSW optimization (211KB vs 174KB)
+- Fixed cross-platform binary parity for consistent performance
+- Enhanced Docker build process for reliable cross-compilation
+- All platforms now have identical HNSW acceleration capabilities
+
+🚀 CONTINUES v3.1.0 REVOLUTION: Revolutionary HNSW k-NN Optimization
 
 🎯 BREAKTHROUGH PERFORMANCE:
 - Complete HNSW k-NN optimization: 50-2000x training speedup

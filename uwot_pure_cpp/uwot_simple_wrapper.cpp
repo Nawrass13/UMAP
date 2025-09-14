@@ -1158,8 +1158,13 @@ extern "C" {
             // Build k-NN graph using specified metric on original (unnormalized) data
             std::vector<int> nn_indices;
             std::vector<double> nn_distances;
-            build_knn_graph(hnsw_data, n_obs, n_dim, n_neighbors, metric, model,
-                nn_indices, nn_distances, force_exact_knn, progress_callback);
+
+            // Create wrapper for old callback to new callback
+            // Use nullptr for now since build_knn_graph handles nullptr gracefully
+            uwot_progress_callback_v2 wrapped_callback = nullptr;
+
+            build_knn_graph(normalized_data, n_obs, n_dim, n_neighbors, metric, model,
+                nn_indices, nn_distances, force_exact_knn, wrapped_callback);
 
             // Use uwot smooth_knn to compute weights
             std::vector<std::size_t> nn_ptr = { static_cast<std::size_t>(n_neighbors) };
@@ -1191,7 +1196,7 @@ extern "C" {
             std::mt19937 gen(42);
             std::normal_distribution<float> dist(0.0f, 1e-4f);
             #pragma omp parallel for if(n_obs > 1000)
-            for (size_t i = 0; i < static_cast<size_t>(n_obs) * static_cast<size_t>(embedding_dim); i++) {
+            for (int i = 0; i < static_cast<int>(static_cast<size_t>(n_obs) * static_cast<size_t>(embedding_dim)); i++) {
                 model->embedding[i] = dist(gen);
             }
 

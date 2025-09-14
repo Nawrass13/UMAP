@@ -87,28 +87,16 @@ if not exist "..\UMAPuwotSharp\UMAPuwotSharp" (
     mkdir "..\UMAPuwotSharp\UMAPuwotSharp"
 )
 
-REM Copy Windows DLL to both base folder and runtime directory
+REM Copy Windows DLL directly to project base folder
 if exist "build-windows\Release\uwot.dll" (
     copy "build-windows\Release\uwot.dll" "..\UMAPuwotSharp\UMAPuwotSharp\" >nul
     echo [PASS] Copied Windows uwot.dll to C# project base folder
-
-    REM Create and copy to Windows runtime folder for packaging
-    if not exist "..\UMAPuwotSharp\UMAPuwotSharp\runtimes\win-x64\native\" (
-        mkdir "..\UMAPuwotSharp\UMAPuwotSharp\runtimes\win-x64\native\"
-    )
-    copy "build-windows\Release\uwot.dll" "..\UMAPuwotSharp\UMAPuwotSharp\runtimes\win-x64\native\" >nul
-    echo [PASS] Copied Windows uwot.dll to runtime folder (win-x64/native)
 ) else (
     echo [FAIL] Windows uwot.dll not found in build-windows\Release\
 )
 
-REM Copy Linux .so file to both base folder and runtime directory
+REM Copy Linux .so file directly to project base folder
 set LINUX_LIB_COPIED=0
-
-REM Create Linux runtime directory
-if not exist "..\UMAPuwotSharp\UMAPuwotSharp\runtimes\linux-x64\native\" (
-    mkdir "..\UMAPuwotSharp\UMAPuwotSharp\runtimes\linux-x64\native\"
-)
 
 REM Check for versioned .so files first (the actual library files)
 for %%F in (build-linux\libuwot.so.*.*.*) do (
@@ -117,8 +105,6 @@ for %%F in (build-linux\libuwot.so.*.*.*) do (
             if %%~zA GTR 1000 (
                 copy "%%F" "..\UMAPuwotSharp\UMAPuwotSharp\libuwot.so" >nul
                 echo [PASS] Copied %%~nxF as libuwot.so to C# project base folder
-                copy "%%F" "..\UMAPuwotSharp\UMAPuwotSharp\runtimes\linux-x64\native\libuwot.so" >nul
-                echo [PASS] Copied %%~nxF to Linux runtime folder (linux-x64/native)
                 set LINUX_LIB_COPIED=1
                 goto :linux_lib_done
             )
@@ -132,8 +118,6 @@ if exist "build-linux\libuwot.so" (
         if %%~zA GTR 1000 (
             copy "build-linux\libuwot.so" "..\UMAPuwotSharp\UMAPuwotSharp\" >nul
             echo [PASS] Copied Linux libuwot.so to C# project base folder
-            copy "build-linux\libuwot.so" "..\UMAPuwotSharp\UMAPuwotSharp\runtimes\linux-x64\native\" >nul
-            echo [PASS] Copied Linux libuwot.so to runtime folder (linux-x64/native)
             set LINUX_LIB_COPIED=1
         )
     )
@@ -207,14 +191,14 @@ if exist "..\UMAPuwotSharp\UMAPuwotSharp\libuwot.so" (
 ) else (echo   [FAIL] Linux library missing)
 
 echo.
-echo Runtime folders for cross-platform deployment:
-if exist "..\UMAPuwotSharp\UMAPuwotSharp\runtimes\win-x64\native\uwot.dll" (
-    echo   [PASS] Windows runtime: runtimes/win-x64/native/uwot.dll
-) else (echo   [WARN] Windows runtime missing)
+echo Cross-platform libraries ready for direct deployment:
+if exist "..\UMAPuwotSharp\UMAPuwotSharp\uwot.dll" (
+    echo   [PASS] Windows library ready: uwot.dll
+) else (echo   [WARN] Windows library missing)
 
-if exist "..\UMAPuwotSharp\UMAPuwotSharp\runtimes\linux-x64\native\libuwot.so" (
-    echo   [PASS] Linux runtime: runtimes/linux-x64/native/libuwot.so
-) else (echo   [WARN] Linux runtime missing)
+if exist "..\UMAPuwotSharp\UMAPuwotSharp\libuwot.so" (
+    echo   [PASS] Linux library ready: libuwot.so
+) else (echo   [WARN] Linux library missing)
 
 echo.
 echo ===========================================
