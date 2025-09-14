@@ -408,3 +408,35 @@ dotnet pack UMAPuwotSharp/UMAPuwotSharp.csproj
 - NEVER add Claude AI attribution or AI-generated footers to commits
 - Focus on technical changes and their impact
 - Use conventional commit format when appropriate
+
+## Key Learnings from HNSW Implementation
+
+### Critical Binary Management
+- **ALWAYS verify cross-platform binaries match**: Linux binary was incomplete (174KB) vs complete (211KB)
+- **Check build dates and sizes**: Mismatched timestamps revealed the fatal issue
+- **Docker script copying**: Fixed unwanted `runtimes/` folder creation, binaries go directly to project root
+- **NuGet versioning**: Cannot replace published packages - must increment version for fixes
+
+### Build Process Insights
+- **CMake + Docker**: Essential for reliable cross-platform native library compilation
+- **Compilation errors**: Fix variable names (`hnsw_data` → `normalized_data`), OpenMP types (`size_t` → `int`), callback signatures
+- **BuildDockerLinuxWindows.bat**: Must build BOTH platforms, not just Windows
+- **Library sizes**: Windows ~150KB, Linux ~174KB+ indicates complete HNSW optimization
+
+### Performance Implementation
+- **HNSW vs Exact**: 50-2000x speedup with <1% accuracy loss (MSE < 0.01)
+- **Memory reduction**: 80-85% savings (240MB → 15-45MB) by eliminating stored training data
+- **Callback system**: Enhanced v2 callbacks with phase reporting vs legacy v1 callbacks
+- **Auto-optimization**: Smart metric-based selection (Euclidean/Cosine/Manhattan get HNSW, others fallback)
+
+### Code Quality Standards
+- **Test everything**: C++ and C# test suites with accuracy validation essential
+- **Version management**: Auto-detecting latest package versions in scripts prevents hardcoding
+- **Documentation**: Comprehensive API docs, README updates, version history crucial for adoption
+- **Professional commits**: Clean messages without AI attribution, focus on technical impact
+
+### Deployment Readiness
+- **NuGet packages**: Complete with cross-platform binaries, proper versioning, detailed release notes
+- **GitHub releases**: Professional presentation with performance benchmarks and installation guides
+- **Production safety**: 5-level outlier detection, confidence scoring, comprehensive validation
+- **Future-proof**: Extensible architecture supporting new metrics and optimizations
