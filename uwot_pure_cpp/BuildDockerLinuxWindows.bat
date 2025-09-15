@@ -62,8 +62,8 @@ if exist build-linux (
     rmdir /s /q build-linux
 )
 
-REM Run Docker build with direct commands
-docker run --rm -v "%cd%":/src -w /src ubuntu:22.04 bash -c "apt-get update && apt-get install -y build-essential cmake libstdc++-11-dev && mkdir -p build-linux && cd build-linux && cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON -DBUILD_TESTS=ON -DCMAKE_POSITION_INDEPENDENT_CODE=ON && make -j4 && ls -la . && if [ -f './test_enhanced_wrapper' ]; then echo 'Running tests...' && ./test_enhanced_wrapper && echo '[PASS] Linux enhanced test completed successfully'; else echo '[WARN] Linux test executable not found'; fi"
+REM Run Docker build with explicit library copying
+docker run --rm -v "%cd%":/src -w /src ubuntu:22.04 bash -c "apt-get update && apt-get install -y build-essential cmake libstdc++-11-dev && mkdir -p build-linux && cd build-linux && cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON -DBUILD_TESTS=ON -DCMAKE_POSITION_INDEPENDENT_CODE=ON && make -j4 && ls -la . && echo 'Ensuring library is properly copied...' && if [ -f 'libuwot.so' ]; then cp libuwot.so libuwot_backup.so; fi && for f in libuwot.so.*; do if [ -f $f ] && [ ! -L $f ]; then cp $f libuwot_final.so && echo Copied $f to libuwot_final.so; fi; done && if [ -f './comprehensive_test' ]; then echo 'Running comprehensive tests...' && ./comprehensive_test && echo '[PASS] Linux comprehensive test completed successfully'; else echo '[WARN] Linux test executable not found'; fi"
 
 if !ERRORLEVEL! NEQ 0 (
     echo ERROR: Docker Linux build failed!
@@ -98,7 +98,19 @@ if exist "build-windows\Release\uwot.dll" (
 REM Copy Linux .so file directly to project base folder
 set LINUX_LIB_COPIED=0
 
-REM Check for versioned .so files first (the actual library files)
+REM Try libuwot_final.so first (our guaranteed backup from Docker)
+if exist "build-linux\libuwot_final.so" (
+    for %%A in ("build-linux\libuwot_final.so") do (
+        if %%~zA GTR 1000 (
+            copy "build-linux\libuwot_final.so" "..\UMAPuwotSharp\UMAPuwotSharp\libuwot.so" >nul
+            echo [PASS] Copied libuwot_final.so as libuwot.so to C# project base folder
+            set LINUX_LIB_COPIED=1
+            goto :linux_lib_done
+        )
+    )
+)
+
+REM Check for versioned .so files (the actual library files)
 for %%F in (build-linux\libuwot.so.*.*.*) do (
     if exist "%%F" (
         for %%A in ("%%F") do (
@@ -112,7 +124,19 @@ for %%F in (build-linux\libuwot.so.*.*.*) do (
     )
 )
 
-REM Check for libuwot.so (only if no versioned file found)
+REM Try backup file if available
+if exist "build-linux\libuwot_backup.so" (
+    for %%A in ("build-linux\libuwot_backup.so") do (
+        if %%~zA GTR 1000 (
+            copy "build-linux\libuwot_backup.so" "..\UMAPuwotSharp\UMAPuwotSharp\libuwot.so" >nul
+            echo [PASS] Copied libuwot_backup.so as libuwot.so to C# project base folder
+            set LINUX_LIB_COPIED=1
+            goto :linux_lib_done
+        )
+    )
+)
+
+REM Check for libuwot.so (last resort)
 if exist "build-linux\libuwot.so" (
     for %%A in ("build-linux\libuwot.so") do (
         if %%~zA GTR 1000 (

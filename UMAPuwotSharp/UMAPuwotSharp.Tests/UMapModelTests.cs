@@ -233,16 +233,17 @@ namespace UMAPuwotSharp.Tests
             Assert.IsNotNull(transformResult);
             Assert.AreEqual(2, transformResult.GetLength(1));
 
-            // Test enhanced transform (if available)
+            // Test enhanced transform with safety analysis
             try
             {
-                var enhancedResult = model.TransformDetailed(newData);
-                Assert.IsNotNull(enhancedResult);
-                Assert.IsTrue(enhancedResult.ProjectionCoordinates.Length == 2);
+                var enhancedResults = model.TransformWithSafety(newData);
+                Assert.IsNotNull(enhancedResults);
+                Assert.IsTrue(enhancedResults.Length == 1);
+                Assert.IsTrue(enhancedResults[0].ProjectionCoordinates.Length == 2);
 
-                Console.WriteLine($"Enhanced transform - Confidence: {enhancedResult.ConfidenceScore:F3}, " +
-                                $"Outlier Level: {enhancedResult.Severity}, " +
-                                $"Percentile: {enhancedResult.PercentileRank:F1}%");
+                Console.WriteLine($"Enhanced transform - Confidence: {enhancedResults[0].ConfidenceScore:F3}, " +
+                                $"Outlier Level: {enhancedResults[0].Severity}, " +
+                                $"Percentile: {enhancedResults[0].PercentileRank:F1}%");
             }
             catch (NotImplementedException)
             {
@@ -271,13 +272,12 @@ namespace UMAPuwotSharp.Tests
                     Assert.IsTrue(model.IsFitted);
 
                     // Save model
-                    model.SaveModel(modelPath);
+                    model.Save(modelPath);
                 }
 
                 // Load and test model
-                using (var loadedModel = new UMapModel())
+                using (var loadedModel = UMapModel.Load(modelPath))
                 {
-                    loadedModel.LoadModel(modelPath);
                     Assert.IsTrue(loadedModel.IsFitted);
 
                     // Test transform with loaded model

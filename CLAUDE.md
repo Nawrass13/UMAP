@@ -71,6 +71,20 @@ public class TransformResult {
 
 ## Build Commands
 
+### ⚠️ CRITICAL BUILD PROTOCOL
+
+**ALWAYS navigate to correct folder FIRST before running batch files:**
+```bash
+cd uwot_pure_cpp                  # ALWAYS go to the folder first!
+./BuildDockerLinuxWindows.bat     # THEN run the batch file
+```
+
+**Why this is critical:**
+- Running from wrong directory causes path resolution issues
+- Libraries get copied to wrong locations
+- NuGet packages contain incorrect binaries
+- This mistake cost us hours in v3.0.0 debugging
+
 ### C# Library (Main Development)
 ```bash
 cd UMAPuwotSharp
