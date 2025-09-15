@@ -38,14 +38,14 @@ public float[,] Fit(float[,] data,
                     int embeddingDimension = 2,
                     int? nNeighbors = null,
                     float? minDist = null,
-                    float? spread = null,        // NEW in v3.1.1
+                    float? spread = null,        // NEW in v3.1.2
                     int nEpochs = 300,
                     DistanceMetric metric = DistanceMetric.Euclidean,
                     bool forceExactKnn = false)
 ```
 
 **New Parameters:**
-- `spread`: **NEW v3.1.1** - Global scale of embedding (auto-optimized by dimension)
+- `spread`: **NEW v3.1.2** - Global scale of embedding (auto-optimized by dimension)
 - `forceExactKnn`: Force exact brute-force k-NN instead of HNSW optimization
 
 **Smart Defaults by Dimension:**
@@ -79,7 +79,7 @@ public float[,] FitWithProgress(float[,] data,
                                int embeddingDimension = 2,
                                int? nNeighbors = null,
                                float? minDist = null,
-                               float? spread = null,        // NEW v3.1.1
+                               float? spread = null,        // NEW v3.1.2
                                int nEpochs = 300,
                                DistanceMetric metric = DistanceMetric.Euclidean,
                                bool forceExactKnn = false)

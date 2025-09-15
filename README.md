@@ -91,7 +91,7 @@ var exactEmbedding = model.Fit(data, forceExactKnn: true);   // Traditional appr
 ## Enhanced Features
 
 ### 🎯 **Smart Spread Parameter for Optimal Embeddings**
-**NEW in v3.1.1**: Complete spread parameter implementation with dimension-aware defaults!
+**NEW in v3.1.2**: Complete spread parameter implementation with dimension-aware defaults!
 
 ```csharp
 // Automatic spread optimization based on dimensions
@@ -156,7 +156,7 @@ var newEmbedding = loadedModel.Transform(newData);
 
 ## Prebuilt Binaries Available
 
-**v3.1.1 Enhanced Binaries with Spread Parameter Support:**
+**v3.1.2 Enhanced Binaries with Spread Parameter Support:**
 
 - **Windows x64**: `uwot.dll` (179KB) - Complete HNSW + spread parameter implementation
 - **Linux x64**: `libuwot.so` (211KB) - Full feature parity with spread optimization
@@ -201,7 +201,7 @@ This enhanced implementation addresses ALL these gaps by providing:
 
 - **True model persistence**: Save and load trained UMAP models in efficient binary format
 - **Authentic transform functionality**: Embed new data using existing models (essential for production ML pipelines)
-- **Smart spread parameter (NEW v3.1.1)**: Dimension-aware defaults for optimal embeddings
+- **Smart spread parameter (NEW v3.1.2)**: Dimension-aware defaults for optimal embeddings
 - **Arbitrary dimensions**: Support for 1D to 50D embeddings including specialized dimensions like 27D
 - **Multiple distance metrics**: Five different metrics optimized for different data types
 - **HNSW optimization**: 50-2000x faster with 80-85% memory reduction

@@ -12,7 +12,7 @@
     <!-- Enhanced NuGet metadata -->
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <PackageId>UMAPuwotSharp</PackageId>
-    <Version>3.1.1</Version>
+    <Version>3.1.2</Version>
     <Authors>Amin Gholiha</Authors>
     <Company>ID Soft AB</Company>
     <Product>UMAPuwotSharp Enhanced with HNSW</Product>
@@ -25,7 +25,7 @@
     <PackageProjectUrl>https://github.com/78Spinoza/UMAP</PackageProjectUrl>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageReleaseNotes>
-🆕 MAJOR FEATURE RELEASE - UMAP v3.1.1: Spread Parameter Implementation
+🆕 MAJOR FEATURE RELEASE - UMAP v3.1.2: Spread Parameter Implementation
 
 🎯 NEW HYPERPARAMETER CONTROL:
 - Complete spread parameter implementation based on official UMAP algorithm

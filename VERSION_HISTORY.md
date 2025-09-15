@@ -1,6 +1,6 @@
 # UMAPuwotSharp Version History
 
-## Version 3.1.1 - Spread Parameter Implementation (Current)
+## Version 3.1.2 - Spread Parameter Implementation (Current)
 
 ### 🆕 MAJOR FEATURE RELEASE - Spread Parameter
 - **Complete spread parameter implementation**: Based on official UMAP algorithm

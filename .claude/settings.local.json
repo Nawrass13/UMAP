@@ -4,7 +4,8 @@
       "Bash(find:*)",
       "Bash(grep:*)",
       "Bash(dotnet build:*)",
-      "Bash(7z:*)"
+      "Bash(7z:*)",
+      "Bash(dotnet pack:*)"
     ],
     "deny": [],
     "ask": []
