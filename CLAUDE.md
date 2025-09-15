@@ -125,6 +125,34 @@ dotnet pack --configuration Release
 # Verify both libraries are ~150KB+ before publishing!
 ```
 
+## ⚠️ **CLAUDE CODE DOCKER BUILD PROTOCOL (CRITICAL)**
+
+**🚨 NEVER ATTEMPT MANUAL DOCKER COMMANDS**
+- Always use `./BuildDockerLinuxWindows.bat` script with 30+ minute timeout
+- Script handles all Docker complexity, path mapping, and cross-compilation
+- Manual Docker commands fail due to Windows path mapping issues
+- Timeout required: minimum 30 minutes (1800000ms) for full build
+
+**CORRECT PROCESS:**
+```bash
+cd uwot_pure_cpp
+# Use 30+ minute timeout - Docker builds take time
+./BuildDockerLinuxWindows.bat
+```
+
+**TIMEOUT GUIDELINES:**
+- **Docker builds**: 30+ minutes (1800000ms minimum)
+- **C# example tests**: 5-10 minutes (300000-600000ms)
+- **C++ comprehensive tests**: 5-10 minutes (timeout kills but shows progress)
+- **Regular builds**: 2-3 minutes (120000-180000ms)
+- **Never use default 2-minute timeouts for complex operations**
+
+**NEVER DO:**
+- `docker run ...` manual commands (path mapping fails)
+- `docker build ...` direct commands (missing dependencies)
+- Short timeouts (builds will be incomplete)
+- Attempting to "fix" the Docker script (it works correctly)
+
 ## Current Status
 
 ### ✅ COMPLETED ACHIEVEMENTS (v3.0.1)

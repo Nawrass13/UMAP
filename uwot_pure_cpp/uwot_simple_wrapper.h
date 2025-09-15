@@ -88,7 +88,11 @@ extern "C" {
         UwotMetric metric,
         float* embedding,
         uwot_progress_callback progress_callback,
-        int force_exact_knn = 0);
+        int force_exact_knn = 0,
+        int use_quantization = 1,
+        int M = -1,
+        int ef_construction = -1,
+        int ef_search = -1);
 
     // Enhanced training functions with detailed progress reporting
     UWOT_API int uwot_fit_with_enhanced_progress(UwotModel* model,
@@ -103,7 +107,11 @@ extern "C" {
         UwotMetric metric,
         float* embedding,
         uwot_progress_callback_v2 progress_callback,
-        int force_exact_knn = 0);
+        int force_exact_knn = 0,
+        int use_quantization = 1,
+        int M = -1,
+        int ef_construction = -1,
+        int ef_search = -1);
 
     // Transform functions
     UWOT_API int uwot_transform(UwotModel* model,
@@ -145,7 +153,12 @@ extern "C" {
         int* embedding_dim,
         int* n_neighbors,
         float* min_dist,
-        UwotMetric* metric);
+        float* spread,
+        UwotMetric* metric,
+        int* use_quantization,
+        int* hnsw_M,
+        int* hnsw_ef_construction,
+        int* hnsw_ef_search);
 
     // Utility functions
     UWOT_API const char* uwot_get_error_message(int error_code);

@@ -98,12 +98,15 @@ bool test_basic_functionality() {
 
     // Test model info
     int info_n_vertices, info_n_dim, info_embedding_dim, info_n_neighbors;
-    float info_min_dist;
+    float info_min_dist, info_spread;
     UwotMetric info_metric;
+    int info_use_quantization, info_hnsw_M, info_hnsw_ef_construction, info_hnsw_ef_search;
 
     result = uwot_get_model_info(model, &info_n_vertices, &info_n_dim,
         &info_embedding_dim, &info_n_neighbors,
-        &info_min_dist, &info_metric);
+        &info_min_dist, &info_spread, &info_metric,
+        &info_use_quantization, &info_hnsw_M,
+        &info_hnsw_ef_construction, &info_hnsw_ef_search);
 
     if (result != UWOT_SUCCESS) {
         printf("Model info test failed\n");
@@ -272,12 +275,15 @@ bool test_model_persistence() {
 
     // Verify model info
     int info_n_vertices, info_n_dim, info_embedding_dim, info_n_neighbors;
-    float info_min_dist;
+    float info_min_dist, info_spread;
     UwotMetric info_metric;
+    int info_use_quantization, info_hnsw_M, info_hnsw_ef_construction, info_hnsw_ef_search;
 
     result = uwot_get_model_info(loaded_model, &info_n_vertices, &info_n_dim,
         &info_embedding_dim, &info_n_neighbors,
-        &info_min_dist, &info_metric);
+        &info_min_dist, &info_spread, &info_metric,
+        &info_use_quantization, &info_hnsw_M,
+        &info_hnsw_ef_construction, &info_hnsw_ef_search);
 
     if (result != UWOT_SUCCESS) {
         printf("Loaded model info retrieval failed\n");

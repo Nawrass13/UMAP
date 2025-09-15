@@ -5,7 +5,17 @@
       "Bash(grep:*)",
       "Bash(dotnet build:*)",
       "Bash(7z:*)",
-      "Bash(dotnet pack:*)"
+      "Bash(dotnet pack:*)",
+      "Bash(gh:*)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(curl:*)",
+      "Bash(cmake:*)",
+      "Bash(./comprehensive_test.exe)",
+      "Bash(timeout:*)",
+      "Bash(./BuildDockerLinuxWindows.bat)",
+      "Bash(docker build:*)",
+      "Bash(dotnet run:*)",
+      "Bash(git add:*)"
     ],
     "deny": [],
     "ask": []

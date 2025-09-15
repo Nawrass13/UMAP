@@ -209,7 +209,7 @@ namespace UMAPuwotSharp
         private static extern int WindowsFit(IntPtr model, float[] data, int nObs, int nDim, int embeddingDim, int nNeighbors, float minDist, float spread, int nEpochs, DistanceMetric metric, float[] embedding, int forceExactKnn);
 
         [DllImport(WindowsDll, CallingConvention = CallingConvention.Cdecl, EntryPoint = "uwot_fit_with_progress")]
-        private static extern int WindowsFitWithProgress(IntPtr model, float[] data, int nObs, int nDim, int embeddingDim, int nNeighbors, float minDist, float spread, int nEpochs, DistanceMetric metric, float[] embedding, NativeProgressCallback progressCallback, int forceExactKnn);
+        private static extern int WindowsFitWithProgress(IntPtr model, float[] data, int nObs, int nDim, int embeddingDim, int nNeighbors, float minDist, float spread, int nEpochs, DistanceMetric metric, float[] embedding, NativeProgressCallback progressCallback, int forceExactKnn, int useQuantization, int M, int efConstruction, int efSearch);
 
         [DllImport(WindowsDll, CallingConvention = CallingConvention.Cdecl, EntryPoint = "uwot_transform")]
         private static extern int WindowsTransform(IntPtr model, float[] newData, int nNewObs, int nDim, float[] embedding);
@@ -230,7 +230,7 @@ namespace UMAPuwotSharp
         private static extern IntPtr WindowsGetErrorMessage(int errorCode);
 
         [DllImport(WindowsDll, CallingConvention = CallingConvention.Cdecl, EntryPoint = "uwot_get_model_info")]
-        private static extern int WindowsGetModelInfo(IntPtr model, out int nVertices, out int nDim, out int embeddingDim, out int nNeighbors, out float minDist, out DistanceMetric metric);
+        private static extern int WindowsGetModelInfo(IntPtr model, out int nVertices, out int nDim, out int embeddingDim, out int nNeighbors, out float minDist, out float spread, out DistanceMetric metric, out int useQuantization, out int hnswM, out int hnswEfConstruction, out int hnswEfSearch);
 
         [DllImport(WindowsDll, CallingConvention = CallingConvention.Cdecl, EntryPoint = "uwot_is_fitted")]
         private static extern int WindowsIsFitted(IntPtr model);
@@ -246,7 +246,7 @@ namespace UMAPuwotSharp
         private static extern int LinuxFit(IntPtr model, float[] data, int nObs, int nDim, int embeddingDim, int nNeighbors, float minDist, float spread, int nEpochs, DistanceMetric metric, float[] embedding, int forceExactKnn);
 
         [DllImport(LinuxDll, CallingConvention = CallingConvention.Cdecl, EntryPoint = "uwot_fit_with_progress")]
-        private static extern int LinuxFitWithProgress(IntPtr model, float[] data, int nObs, int nDim, int embeddingDim, int nNeighbors, float minDist, float spread, int nEpochs, DistanceMetric metric, float[] embedding, NativeProgressCallback progressCallback, int forceExactKnn);
+        private static extern int LinuxFitWithProgress(IntPtr model, float[] data, int nObs, int nDim, int embeddingDim, int nNeighbors, float minDist, float spread, int nEpochs, DistanceMetric metric, float[] embedding, NativeProgressCallback progressCallback, int forceExactKnn, int useQuantization, int M, int efConstruction, int efSearch);
 
         [DllImport(LinuxDll, CallingConvention = CallingConvention.Cdecl, EntryPoint = "uwot_transform")]
         private static extern int LinuxTransform(IntPtr model, float[] newData, int nNewObs, int nDim, float[] embedding);
@@ -267,7 +267,7 @@ namespace UMAPuwotSharp
         private static extern IntPtr LinuxGetErrorMessage(int errorCode);
 
         [DllImport(LinuxDll, CallingConvention = CallingConvention.Cdecl, EntryPoint = "uwot_get_model_info")]
-        private static extern int LinuxGetModelInfo(IntPtr model, out int nVertices, out int nDim, out int embeddingDim, out int nNeighbors, out float minDist, out DistanceMetric metric);
+        private static extern int LinuxGetModelInfo(IntPtr model, out int nVertices, out int nDim, out int embeddingDim, out int nNeighbors, out float minDist, out float spread, out DistanceMetric metric, out int useQuantization, out int hnswM, out int hnswEfConstruction, out int hnswEfSearch);
 
         [DllImport(LinuxDll, CallingConvention = CallingConvention.Cdecl, EntryPoint = "uwot_is_fitted")]
         private static extern int LinuxIsFitted(IntPtr model);
@@ -313,10 +313,10 @@ namespace UMAPuwotSharp
                 if (!IsFitted)
                     throw new InvalidOperationException("Model must be fitted before accessing model info");
 
-                var result = CallGetModelInfo(_nativeModel, out var nVertices, out var nDim, out var embeddingDim, out var nNeighbors, out var minDist, out var metric);
+                var result = CallGetModelInfo(_nativeModel, out var nVertices, out var nDim, out var embeddingDim, out var nNeighbors, out var minDist, out var spread, out var metric, out var useQuantization, out var hnswM, out var hnswEfConstruction, out var hnswEfSearch);
                 ThrowIfError(result);
 
-                return new UMapModelInfo(nVertices, nDim, embeddingDim, nNeighbors, minDist, metric);
+                return new UMapModelInfo(nVertices, nDim, embeddingDim, nNeighbors, minDist, spread, metric, useQuantization != 0, hnswM, hnswEfConstruction, hnswEfSearch);
             }
         }
 
@@ -431,6 +431,10 @@ namespace UMAPuwotSharp
         /// <param name="nEpochs">Number of optimization epochs (default: 300)</param>
         /// <param name="metric">Distance metric to use (default: Euclidean)</param>
         /// <param name="forceExactKnn">Force exact brute-force k-NN instead of HNSW approximation (default: false). Use for validation or small datasets.</param>
+        /// <param name="useQuantization">Enable Product Quantization for 70-80% memory reduction (default: true)</param>
+        /// <param name="hnswM">HNSW graph degree parameter. -1 = auto-scale based on data size (default: -1)</param>
+        /// <param name="hnswEfConstruction">HNSW build quality parameter. -1 = auto-scale (default: -1)</param>
+        /// <param name="hnswEfSearch">HNSW query quality parameter. -1 = auto-scale (default: -1)</param>
         /// <returns>Embedding coordinates [samples, embeddingDimension]</returns>
         /// <exception cref="ArgumentNullException">Thrown when data is null</exception>
         /// <exception cref="ArgumentException">Thrown when parameters are invalid</exception>
@@ -441,7 +445,11 @@ namespace UMAPuwotSharp
                           float? spread = null,
                           int nEpochs = 300,
                           DistanceMetric metric = DistanceMetric.Euclidean,
-                          bool forceExactKnn = false)
+                          bool forceExactKnn = false,
+                          bool useQuantization = true,
+                          int hnswM = -1,
+                          int hnswEfConstruction = -1,
+                          int hnswEfSearch = -1)
         {
             // Use smart defaults based on embedding dimension
             int actualNeighbors = nNeighbors ?? CalculateOptimalNeighbors(embeddingDimension);
@@ -722,7 +730,7 @@ namespace UMAPuwotSharp
                     }
                 };
 
-                result = CallFitWithProgress(_nativeModel, flatData, nSamples, nFeatures, embeddingDimension, nNeighbors, minDist, spread, nEpochs, metric, embedding, nativeCallback, forceExactKnn ? 1 : 0);
+                result = CallFitWithProgress(_nativeModel, flatData, nSamples, nFeatures, embeddingDimension, nNeighbors, minDist, spread, nEpochs, metric, embedding, nativeCallback, forceExactKnn ? 1 : 0, 1, -1, -1, -1);
             }
             else
             {
@@ -753,10 +761,10 @@ namespace UMAPuwotSharp
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static int CallFitWithProgress(IntPtr model, float[] data, int nObs, int nDim, int embeddingDim, int nNeighbors, float minDist, float spread, int nEpochs, DistanceMetric metric, float[] embedding, NativeProgressCallback progressCallback, int forceExactKnn)
+        private static int CallFitWithProgress(IntPtr model, float[] data, int nObs, int nDim, int embeddingDim, int nNeighbors, float minDist, float spread, int nEpochs, DistanceMetric metric, float[] embedding, NativeProgressCallback progressCallback, int forceExactKnn, int useQuantization, int M, int efConstruction, int efSearch)
         {
-            return IsWindows ? WindowsFitWithProgress(model, data, nObs, nDim, embeddingDim, nNeighbors, minDist, spread, nEpochs, metric, embedding, progressCallback, forceExactKnn)
-                             : LinuxFitWithProgress(model, data, nObs, nDim, embeddingDim, nNeighbors, minDist, spread, nEpochs, metric, embedding, progressCallback, forceExactKnn);
+            return IsWindows ? WindowsFitWithProgress(model, data, nObs, nDim, embeddingDim, nNeighbors, minDist, spread, nEpochs, metric, embedding, progressCallback, forceExactKnn, useQuantization, M, efConstruction, efSearch)
+                             : LinuxFitWithProgress(model, data, nObs, nDim, embeddingDim, nNeighbors, minDist, spread, nEpochs, metric, embedding, progressCallback, forceExactKnn, useQuantization, M, efConstruction, efSearch);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -800,10 +808,10 @@ namespace UMAPuwotSharp
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static int CallGetModelInfo(IntPtr model, out int nVertices, out int nDim, out int embeddingDim, out int nNeighbors, out float minDist, out DistanceMetric metric)
+        private static int CallGetModelInfo(IntPtr model, out int nVertices, out int nDim, out int embeddingDim, out int nNeighbors, out float minDist, out float spread, out DistanceMetric metric, out int useQuantization, out int hnswM, out int hnswEfConstruction, out int hnswEfSearch)
         {
-            return IsWindows ? WindowsGetModelInfo(model, out nVertices, out nDim, out embeddingDim, out nNeighbors, out minDist, out metric)
-                             : LinuxGetModelInfo(model, out nVertices, out nDim, out embeddingDim, out nNeighbors, out minDist, out metric);
+            return IsWindows ? WindowsGetModelInfo(model, out nVertices, out nDim, out embeddingDim, out nNeighbors, out minDist, out spread, out metric, out useQuantization, out hnswM, out hnswEfConstruction, out hnswEfSearch)
+                             : LinuxGetModelInfo(model, out nVertices, out nDim, out embeddingDim, out nNeighbors, out minDist, out spread, out metric, out useQuantization, out hnswM, out hnswEfConstruction, out hnswEfSearch);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -922,23 +930,53 @@ namespace UMAPuwotSharp
         public float MinimumDistance { get; }
 
         /// <summary>
+        /// Gets the spread parameter used during training (controls global scale)
+        /// </summary>
+        public float Spread { get; }
+
+        /// <summary>
         /// Gets the distance metric used during training
         /// </summary>
         public DistanceMetric Metric { get; }
+
+        /// <summary>
+        /// Gets whether Product Quantization is enabled for memory optimization
+        /// </summary>
+        public bool UseQuantization { get; }
+
+        /// <summary>
+        /// Gets the HNSW graph degree parameter (controls connectivity)
+        /// </summary>
+        public int HnswM { get; }
+
+        /// <summary>
+        /// Gets the HNSW construction quality parameter (higher = better quality, slower build)
+        /// </summary>
+        public int HnswEfConstruction { get; }
+
+        /// <summary>
+        /// Gets the HNSW search quality parameter (higher = better recall, slower queries)
+        /// </summary>
+        public int HnswEfSearch { get; }
 
         /// <summary>
         /// Gets the human-readable name of the distance metric
         /// </summary>
         public string MetricName => UMapModel.GetMetricName(Metric);
 
-        internal UMapModelInfo(int trainingSamples, int inputDimension, int outputDimension, int neighbors, float minimumDistance, DistanceMetric metric)
+        internal UMapModelInfo(int trainingSamples, int inputDimension, int outputDimension, int neighbors, float minimumDistance, float spread, DistanceMetric metric, bool useQuantization, int hnswM, int hnswEfConstruction, int hnswEfSearch)
         {
             TrainingSamples = trainingSamples;
             InputDimension = inputDimension;
             OutputDimension = outputDimension;
             Neighbors = neighbors;
             MinimumDistance = minimumDistance;
+            Spread = spread;
             Metric = metric;
+            UseQuantization = useQuantization;
+            HnswM = hnswM;
+            HnswEfConstruction = hnswEfConstruction;
+            HnswEfSearch = hnswEfSearch;
         }
 
         /// <summary>
@@ -947,7 +985,7 @@ namespace UMAPuwotSharp
         /// <returns>A formatted string describing all model parameters</returns>
         public override string ToString()
         {
-            return $"Enhanced UMAP Model: {TrainingSamples} samples, {InputDimension}D → {OutputDimension}D, k={Neighbors}, min_dist={MinimumDistance:F3}, metric={MetricName}";
+            return $"Enhanced UMAP Model: {TrainingSamples} samples, {InputDimension}D → {OutputDimension}D, k={Neighbors}, min_dist={MinimumDistance:F3}, spread={Spread:F3}, metric={MetricName}";
         }
     }
 }

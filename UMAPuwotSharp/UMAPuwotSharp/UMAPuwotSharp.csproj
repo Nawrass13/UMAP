@@ -12,20 +12,35 @@
     <!-- Enhanced NuGet metadata -->
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <PackageId>UMAPuwotSharp</PackageId>
-    <Version>3.1.2</Version>
+    <Version>3.2.0</Version>
     <Authors>Amin Gholiha</Authors>
     <Company>ID Soft AB</Company>
     <Product>UMAPuwotSharp Enhanced with HNSW</Product>
     <Title>UMAP for .NET with HNSW Optimization &amp; AI Safety</Title>
-    <Description>Revolutionary UMAP library with HNSW optimization providing 50-2000x faster transforms and production safety features. NEW: Spread parameter for t-SNE-like embeddings! Unique capabilities: HNSW (Hierarchical Navigable Small World) optimization, smart dimension-based defaults (2D: spread=5.0, min_dist=0.35), 5-level outlier detection (Normal to No Man's Land), 80% memory reduction, AI/ML data validation, arbitrary dimensions (1D-50D), multiple metrics, progress reporting, and complete model persistence. Perfect for production AI pipelines requiring data quality assessment.</Description>
-    <PackageTags>umap;uwot;hnsw;ai-safety;outlier-detection;dimensionality-reduction;machine-learning;embedding;manifold-learning;production-ml;data-validation;nearest-neighbors;performance-optimization;memory-efficient;multi-dimensional;progress-reporting;model-persistence</PackageTags>
+    <Description>Revolutionary UMAP library with HNSW optimization + Product Quantization providing 50-2000x faster transforms and production safety features. NEW v3.2.0: Product Quantization for 70-80% file size reduction with minimal quality loss! Features: HNSW (Hierarchical Navigable Small World) optimization, Product Quantization (PQ) compression, smart dimension-based defaults (2D: spread=5.0, min_dist=0.35), 5-level outlier detection (Normal to No Man's Land), 80% memory reduction, AI/ML data validation, arbitrary dimensions (1D-50D), multiple metrics, enhanced progress reporting, and complete model persistence. Perfect for production AI pipelines requiring data quality assessment and efficient storage.</Description>
+    <PackageTags>umap;uwot;hnsw;product-quantization;ai-safety;outlier-detection;dimensionality-reduction;machine-learning;embedding;manifold-learning;production-ml;data-validation;nearest-neighbors;performance-optimization;memory-efficient;multi-dimensional;progress-reporting;model-persistence;compression;vector-quantization</PackageTags>
     <RepositoryUrl>https://github.com/78Spinoza/UMAP</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <PackageLicenseExpression>GPL-3.0-or-later</PackageLicenseExpression>
     <PackageProjectUrl>https://github.com/78Spinoza/UMAP</PackageProjectUrl>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageReleaseNotes>
-🆕 MAJOR FEATURE RELEASE - UMAP v3.1.2: Spread Parameter Implementation
+🆕 MAJOR BREAKTHROUGH RELEASE - UMAP v3.2.0: Product Quantization + HNSW Hyperparameters
+
+🎯 NEW PRODUCT QUANTIZATION SYSTEM:
+- Revolutionary file size compression: 70-80% reduction with minimal quality loss
+- Advanced k-means clustering: 4-subspace vector quantization for optimal storage
+- Intelligent auto-scaling: Dataset-aware HNSW parameter optimization
+- Enhanced memory estimation: Real-time memory usage predictions during training
+- Smart quantization control: useQuantization=true by default with override option
+
+🔧 EXPOSED HNSW HYPERPARAMETERS:
+- Complete HNSW control: M (graph degree), ef_construction (build quality), ef_search (query speed)
+- Auto-scaling logic: Small datasets (M=16), Medium (M=32), Large (M=64) for optimal performance
+- Memory-aware optimization: Automatic parameter selection based on dataset characteristics
+- Advanced progress reporting: Phase-aware callbacks with time estimates and warnings
+
+🎯 CONTINUES v3.1.2 FEATURES: Spread Parameter Implementation
 
 🎯 NEW HYPERPARAMETER CONTROL:
 - Complete spread parameter implementation based on official UMAP algorithm

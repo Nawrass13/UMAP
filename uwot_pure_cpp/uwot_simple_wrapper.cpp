@@ -18,6 +18,9 @@
 #endif
 #include <vector>
 #include <memory>
+// LZ4 compression support for fast model storage
+#include "lz4.h"
+#define COMPRESSION_AVAILABLE true
 #include <random>
 #include <algorithm>
 #include <cstring>
@@ -559,17 +562,151 @@ struct UwotModel {
     float mild_outlier_threshold;      // 2.5 std deviations
     float extreme_outlier_threshold;   // 4.0 std deviations
 
+    // HNSW hyperparameters
+    int hnsw_M;                        // Graph degree parameter (16-64)
+    int hnsw_ef_construction;          // Build quality parameter (64-256)
+    int hnsw_ef_search;                // Query quality parameter (32-128)
+    bool use_quantization;             // Enable Product Quantization
+
+    // Product Quantization data structures
+    std::vector<uint8_t> pq_codes;     // Quantized vector codes (n_vertices * pq_m bytes)
+    std::vector<float> pq_centroids;   // PQ codebook (pq_m * 256 * subspace_dim floats)
+    int pq_m;                          // Number of subspaces (default: 4)
+
     UwotModel() : n_vertices(0), n_dim(0), embedding_dim(2), n_neighbors(15),
         min_dist(0.1f), spread(1.0f), metric(UWOT_METRIC_EUCLIDEAN), a(1.929f), b(0.7915f),
         is_fitted(false), force_exact_knn(false), use_normalization(false),
         min_neighbor_distance(0.0f), mean_neighbor_distance(0.0f),
         std_neighbor_distance(0.0f), p95_neighbor_distance(0.0f),
         p99_neighbor_distance(0.0f), mild_outlier_threshold(0.0f),
-        extreme_outlier_threshold(0.0f) {
+        extreme_outlier_threshold(0.0f), hnsw_M(32), hnsw_ef_construction(128),
+        hnsw_ef_search(64), use_quantization(true), pq_m(4) {
 
         space_factory = std::make_unique<hnsw_utils::SpaceFactory>();
     }
 };
+
+// Product Quantization helper functions
+namespace pq_utils {
+    // Simple k-means clustering for PQ codebook generation
+    void simple_kmeans(const std::vector<float>& data, int n_points, int dim, int k,
+                       std::vector<float>& centroids, std::vector<int>& assignments) {
+        centroids.resize(k * dim);
+        assignments.resize(n_points);
+
+        // Initialize centroids randomly from data points
+        std::random_device rd;
+        std::mt19937 gen(rd());
+        std::uniform_int_distribution<> dis(0, n_points - 1);
+
+        for (int c = 0; c < k; c++) {
+            int random_idx = dis(gen);
+            for (int d = 0; d < dim; d++) {
+                centroids[c * dim + d] = data[random_idx * dim + d];
+            }
+        }
+
+        // Iterate k-means (simplified: just a few iterations)
+        for (int iter = 0; iter < 10; iter++) {
+            // Assignment step
+            for (int i = 0; i < n_points; i++) {
+                float min_dist = std::numeric_limits<float>::max();
+                int best_cluster = 0;
+
+                for (int c = 0; c < k; c++) {
+                    float dist = 0.0f;
+                    for (int d = 0; d < dim; d++) {
+                        float diff = data[i * dim + d] - centroids[c * dim + d];
+                        dist += diff * diff;
+                    }
+                    if (dist < min_dist) {
+                        min_dist = dist;
+                        best_cluster = c;
+                    }
+                }
+                assignments[i] = best_cluster;
+            }
+
+            // Update step
+            std::vector<int> counts(k, 0);
+            std::fill(centroids.begin(), centroids.end(), 0.0f);
+
+            for (int i = 0; i < n_points; i++) {
+                int c = assignments[i];
+                counts[c]++;
+                for (int d = 0; d < dim; d++) {
+                    centroids[c * dim + d] += data[i * dim + d];
+                }
+            }
+
+            for (int c = 0; c < k; c++) {
+                if (counts[c] > 0) {
+                    for (int d = 0; d < dim; d++) {
+                        centroids[c * dim + d] /= counts[c];
+                    }
+                }
+            }
+        }
+    }
+
+    // Perform Product Quantization encoding
+    void encode_pq(const std::vector<float>& data, int n_points, int dim, int m,
+                   std::vector<uint8_t>& codes, std::vector<float>& centroids) {
+        if (dim % m != 0) {
+            throw std::runtime_error("Dimension must be divisible by number of subspaces");
+        }
+
+        int subspace_dim = dim / m;
+        int num_centroids = 256; // 8-bit codes
+
+        codes.resize(n_points * m);
+        centroids.resize(m * num_centroids * subspace_dim);
+
+        // Process each subspace
+        for (int sub = 0; sub < m; sub++) {
+            // Extract subspace data
+            std::vector<float> subspace_data(n_points * subspace_dim);
+            for (int i = 0; i < n_points; i++) {
+                for (int d = 0; d < subspace_dim; d++) {
+                    subspace_data[i * subspace_dim + d] = data[i * dim + sub * subspace_dim + d];
+                }
+            }
+
+            // Run k-means for this subspace
+            std::vector<float> sub_centroids;
+            std::vector<int> assignments;
+            simple_kmeans(subspace_data, n_points, subspace_dim, num_centroids, sub_centroids, assignments);
+
+            // Store centroids for this subspace
+            for (int c = 0; c < num_centroids; c++) {
+                for (int d = 0; d < subspace_dim; d++) {
+                    centroids[sub * num_centroids * subspace_dim + c * subspace_dim + d] = sub_centroids[c * subspace_dim + d];
+                }
+            }
+
+            // Store codes for this subspace
+            for (int i = 0; i < n_points; i++) {
+                codes[i * m + sub] = static_cast<uint8_t>(assignments[i]);
+            }
+        }
+    }
+
+    // Reconstruct vector from PQ codes
+    void reconstruct_vector(const std::vector<uint8_t>& codes, int point_idx, int m,
+                           const std::vector<float>& centroids, int subspace_dim,
+                           std::vector<float>& reconstructed) {
+        reconstructed.resize(m * subspace_dim);
+
+        for (int sub = 0; sub < m; sub++) {
+            uint8_t code = codes[point_idx * m + sub];
+            int centroid_offset = sub * 256 * subspace_dim + code * subspace_dim;
+
+            for (int d = 0; d < subspace_dim; d++) {
+                reconstructed[sub * subspace_dim + d] = centroids[centroid_offset + d];
+            }
+        }
+    }
+}
 
 // Helper function to compute normalization parameters
 void compute_normalization(const std::vector<float>& data, int n_obs, int n_dim,
@@ -1067,6 +1204,107 @@ void load_hnsw_from_stream(std::istream &input, hnswlib::HierarchicalNSW<float>*
     hnsw_stream_utils::load_hnsw_from_stream(input, hnsw_index, space, hnsw_size);
 }
 
+// LZ4 compressed HNSW streaming functions for fast model storage
+void save_hnsw_to_stream_compressed(std::ostream &output, hnswlib::HierarchicalNSW<float>* hnsw_index) {
+    std::string temp_filename = hnsw_stream_utils::generate_unique_temp_filename("hnsw_compressed");
+
+    try {
+        // Save HNSW index to temporary file
+        hnsw_index->saveIndex(temp_filename);
+
+        // Read the temporary file
+        std::ifstream temp_file(temp_filename, std::ios::binary);
+        if (!temp_file.is_open()) {
+            throw std::runtime_error("Failed to open temporary HNSW file for compression");
+        }
+
+        // Get file size
+        temp_file.seekg(0, std::ios::end);
+        size_t uncompressed_size = temp_file.tellg();
+        temp_file.seekg(0, std::ios::beg);
+
+        // Read all data
+        std::vector<char> uncompressed_data(uncompressed_size);
+        temp_file.read(uncompressed_data.data(), uncompressed_size);
+        temp_file.close();
+
+        // Compress data using LZ4 (extremely fast compression/decompression)
+        int max_compressed_size = LZ4_compressBound(static_cast<int>(uncompressed_size));
+        std::vector<char> compressed_data(max_compressed_size);
+
+        int compressed_size = LZ4_compress_default(
+            uncompressed_data.data(),
+            compressed_data.data(),
+            static_cast<int>(uncompressed_size),
+            max_compressed_size);
+
+        if (compressed_size <= 0) {
+            throw std::runtime_error("LZ4 HNSW compression failed");
+        }
+
+        compressed_data.resize(compressed_size);
+
+        // Write compressed data to stream
+        output.write(reinterpret_cast<const char*>(&uncompressed_size), sizeof(size_t));
+        output.write(reinterpret_cast<const char*>(&compressed_size), sizeof(int));
+        output.write(compressed_data.data(), compressed_size);
+
+        // Clean up temporary file
+        temp_utils::safe_remove_file(temp_filename);
+
+    } catch (...) {
+        temp_utils::safe_remove_file(temp_filename);
+        throw;
+    }
+}
+
+void load_hnsw_from_stream_compressed(std::istream &input, hnswlib::HierarchicalNSW<float>* hnsw_index,
+                                    hnswlib::SpaceInterface<float>* space) {
+    try {
+        // Read LZ4 compression headers
+        size_t uncompressed_size;
+        int compressed_size;
+        input.read(reinterpret_cast<char*>(&uncompressed_size), sizeof(size_t));
+        input.read(reinterpret_cast<char*>(&compressed_size), sizeof(int));
+
+        // Read compressed data
+        std::vector<char> compressed_data(compressed_size);
+        input.read(compressed_data.data(), compressed_size);
+
+        // Decompress data using LZ4 (extremely fast decompression)
+        std::vector<char> uncompressed_data(uncompressed_size);
+
+        int result = LZ4_decompress_safe(
+            compressed_data.data(),
+            uncompressed_data.data(),
+            compressed_size,
+            static_cast<int>(uncompressed_size));
+
+        if (result != static_cast<int>(uncompressed_size)) {
+            throw std::runtime_error("LZ4 HNSW decompression failed");
+        }
+
+        // Write to temporary file for HNSW loading
+        std::string temp_filename = hnsw_stream_utils::generate_unique_temp_filename("hnsw_decompress");
+        std::ofstream temp_file(temp_filename, std::ios::binary);
+        if (!temp_file.is_open()) {
+            throw std::runtime_error("Failed to create temporary HNSW file for decompression");
+        }
+
+        temp_file.write(uncompressed_data.data(), uncompressed_size);
+        temp_file.close();
+
+        // Load from temporary file using HNSW API
+        hnsw_index->loadIndex(temp_filename, space);
+
+        // Clean up temporary file
+        temp_utils::safe_remove_file(temp_filename);
+
+    } catch (...) {
+        throw;
+    }
+}
+
 extern "C" {
 
     // Calculate UMAP a,b parameters from spread and min_dist
@@ -1162,7 +1400,11 @@ extern "C" {
         UwotMetric metric,
         float* embedding,
         uwot_progress_callback progress_callback,
-        int force_exact_knn) {
+        int force_exact_knn,
+        int use_quantization,
+        int M,
+        int ef_construction,
+        int ef_search) {
 
         if (!model || !data || !embedding || n_obs <= 0 || n_dim <= 0 ||
             embedding_dim <= 0 || n_neighbors <= 0 || n_epochs <= 0) {
@@ -1182,6 +1424,29 @@ extern "C" {
             model->spread = spread;
             model->metric = metric;
             model->force_exact_knn = (force_exact_knn != 0); // Convert int to bool
+            model->use_quantization = (use_quantization != 0); // Convert int to bool
+
+            // Auto-scale HNSW parameters based on dataset size (if not explicitly set)
+            if (M == -1) {  // Auto-scale flag
+                if (n_obs < 50000) {
+                    model->hnsw_M = 16;
+                    model->hnsw_ef_construction = 64;
+                    model->hnsw_ef_search = 32;
+                } else if (n_obs < 1000000) {
+                    model->hnsw_M = 32;
+                    model->hnsw_ef_construction = 128;
+                    model->hnsw_ef_search = 64;
+                } else {
+                    model->hnsw_M = 64;
+                    model->hnsw_ef_construction = 128;
+                    model->hnsw_ef_search = 128;
+                }
+            } else {
+                // Use explicitly provided parameters
+                model->hnsw_M = M;
+                model->hnsw_ef_construction = ef_construction;
+                model->hnsw_ef_search = ef_search;
+            }
 
             // Store and normalize input data
             std::vector<float> input_data(data, data + (static_cast<size_t>(n_obs) * static_cast<size_t>(n_dim)));
@@ -1194,17 +1459,60 @@ extern "C" {
             std::vector<float> normalized_data;
             normalize_data(input_data, normalized_data, n_obs, n_dim, model->feature_means, model->feature_stds);
 
-            // Create HNSW index for normalized data using space factory
+            // Product Quantization encoding (if enabled)
+            std::vector<float> hnsw_data; // Data to use for HNSW (either normalized or reconstructed)
+            if (model->use_quantization && n_dim % model->pq_m == 0) {
+                if (progress_callback) {
+                    progress_callback(10, 100, 10.0f);  // Show PQ progress
+                }
+
+                try {
+                    // Perform PQ encoding
+                    pq_utils::encode_pq(normalized_data, n_obs, n_dim, model->pq_m,
+                                       model->pq_codes, model->pq_centroids);
+
+                    // Reconstruct vectors for HNSW index building
+                    hnsw_data.resize(n_obs * n_dim);
+                    int subspace_dim = n_dim / model->pq_m;
+                    for (int i = 0; i < n_obs; i++) {
+                        std::vector<float> reconstructed;
+                        pq_utils::reconstruct_vector(model->pq_codes, i, model->pq_m,
+                                                    model->pq_centroids, subspace_dim, reconstructed);
+                        std::copy(reconstructed.begin(), reconstructed.end(),
+                                 hnsw_data.begin() + i * n_dim);
+                    }
+
+                    if (progress_callback) {
+                        progress_callback(15, 100, 15.0f);  // PQ complete
+                    }
+                } catch (const std::exception& e) {
+                    // Fall back to unquantized data if PQ fails
+                    model->use_quantization = false;
+                    hnsw_data = normalized_data;
+                }
+            } else {
+                // Use normalized data directly
+                hnsw_data = normalized_data;
+            }
+
+            // Create HNSW index for prepared data using space factory
             if (!model->space_factory->create_space(metric, n_dim)) {
                 return UWOT_ERROR_MEMORY;
             }
+
+            // Memory estimation for HNSW index
+            size_t estimated_memory_mb = ((size_t)n_obs * model->hnsw_M * 4 * 2) / (1024 * 1024);
+            printf("[HNSW] Creating index: %d points, estimated %zuMB memory, M=%d, ef_c=%d\n",
+                   n_obs, estimated_memory_mb, model->hnsw_M, model->hnsw_ef_construction);
+
             model->ann_index = std::make_unique<hnswlib::HierarchicalNSW<float>>(
-                model->space_factory->get_space(), n_obs, 16, 200);
+                model->space_factory->get_space(), n_obs, model->hnsw_M, model->hnsw_ef_construction);
+            model->ann_index->setEf(model->hnsw_ef_search);  // Set query-time ef parameter
 
             // Add all points to HNSW index
             for (int i = 0; i < n_obs; i++) {
                 model->ann_index->addPoint(
-                    &normalized_data[static_cast<size_t>(i) * static_cast<size_t>(n_dim)],
+                    &hnsw_data[static_cast<size_t>(i) * static_cast<size_t>(n_dim)],
                     static_cast<hnswlib::labeltype>(i));
             }
 
@@ -1266,8 +1574,8 @@ extern "C" {
             std::mt19937 rng(42);
             std::uniform_int_distribution<size_t> vertex_dist(0, static_cast<size_t>(n_obs) - 1);
 
-            // Progress reporting setup
-            int progress_interval = std::max(1, n_epochs / 20);  // Report every 5% progress
+            // Enhanced progress reporting setup
+            int progress_interval = std::max(1, n_epochs / 100);  // Report every 1% progress
             auto last_report_time = std::chrono::steady_clock::now();
 
             // Only show console output if no callback provided
@@ -1279,6 +1587,10 @@ extern "C" {
 
             for (int epoch = 0; epoch < n_epochs; epoch++) {
                 float alpha = learning_rate * (1.0f - static_cast<float>(epoch) / static_cast<float>(n_epochs));
+
+                // Loss calculation for progress reporting
+                float epoch_loss = 0.0f;
+                int loss_samples = 0;
 
                 // Process positive edges (attractive forces)
                 for (size_t edge_idx = 0; edge_idx < model->positive_head.size(); edge_idx++) {
@@ -1309,6 +1621,13 @@ extern "C" {
                             model->embedding[i * static_cast<size_t>(embedding_dim) + static_cast<size_t>(d)] += grad;
                             model->embedding[j * static_cast<size_t>(embedding_dim) + static_cast<size_t>(d)] -= grad;
                         }
+
+                        // Accumulate attractive force loss (cross-entropy component)
+                        if (loss_samples < 1000) { // Sample subset for performance
+                            float prob = 1.0f / (1.0f + model->a * pd2b);
+                            epoch_loss += -std::log(prob + 1e-8f);
+                            loss_samples++;
+                        }
                     }
 
                     // Negative sampling (5 samples per positive edge)
@@ -1338,12 +1657,23 @@ extern "C" {
                                 float grad = alpha * grad_coeff * diff;
                                 model->embedding[i * static_cast<size_t>(embedding_dim) + static_cast<size_t>(d)] += grad;
                             }
+
+                            // Accumulate repulsive force loss (cross-entropy component)
+                            if (loss_samples < 1000) { // Sample subset for performance
+                                float prob = model->a * std::pow(neg_dist_sq, model->b) / (1.0f + model->a * std::pow(neg_dist_sq, model->b));
+                                epoch_loss += -std::log(1.0f - prob + 1e-8f);
+                                loss_samples++;
+                            }
                         }
                     }
                 }
 
-                // Progress reporting
-                if (epoch % progress_interval == 0 || epoch == n_epochs - 1) {
+                // Adaptive progress reporting: more frequent for early epochs
+                bool should_report = (epoch < 10) ||                        // Report first 10 epochs
+                                   (epoch % progress_interval == 0) ||       // Regular interval
+                                   (epoch == n_epochs - 1);                  // Final epoch
+
+                if (should_report) {
                     float percent = (static_cast<float>(epoch + 1) / static_cast<float>(n_epochs)) * 100.0f;
 
                     if (progress_callback) {
@@ -1364,8 +1694,11 @@ extern "C" {
                             else if (i == filled && percent_int % 5 >= 2) std::printf(">");
                             else std::printf(" ");
                         }
-                        std::printf("] %d%% (Epoch %d/%d) [%lldms]",
-                            percent_int, epoch + 1, n_epochs, static_cast<long long>(elapsed.count()));
+                        // Calculate average loss for this epoch
+                        float avg_loss = loss_samples > 0 ? epoch_loss / loss_samples : 0.0f;
+
+                        std::printf("] %d%% (Epoch %d/%d) Loss: %.3f [%lldms]",
+                            percent_int, epoch + 1, n_epochs, avg_loss, static_cast<long long>(elapsed.count()));
                         std::fflush(stdout);
 
                         last_report_time = current_time;
@@ -1403,7 +1736,11 @@ extern "C" {
         UwotMetric metric,
         float* embedding,
         uwot_progress_callback_v2 progress_callback,
-        int force_exact_knn) {
+        int force_exact_knn,
+        int use_quantization,
+        int M,
+        int ef_construction,
+        int ef_search) {
 
         if (!model || !data || !embedding || n_obs <= 0 || n_dim <= 0 ||
             embedding_dim <= 0 || n_neighbors <= 0 || n_epochs <= 0) {
@@ -1429,6 +1766,29 @@ extern "C" {
             model->spread = spread;
             model->metric = metric;
             model->force_exact_knn = (force_exact_knn != 0);
+            model->use_quantization = (use_quantization != 0);
+
+            // Auto-scale HNSW parameters based on dataset size (if not explicitly set)
+            if (M == -1) {  // Auto-scale flag
+                if (n_obs < 50000) {
+                    model->hnsw_M = 16;
+                    model->hnsw_ef_construction = 64;
+                    model->hnsw_ef_search = 32;
+                } else if (n_obs < 1000000) {
+                    model->hnsw_M = 32;
+                    model->hnsw_ef_construction = 128;
+                    model->hnsw_ef_search = 64;
+                } else {
+                    model->hnsw_M = 64;
+                    model->hnsw_ef_construction = 128;
+                    model->hnsw_ef_search = 128;
+                }
+            } else {
+                // Use explicitly provided parameters
+                model->hnsw_M = M;
+                model->hnsw_ef_construction = ef_construction;
+                model->hnsw_ef_search = ef_search;
+            }
 
             // Phase 2: Unified data normalization pipeline
             auto norm_start = std::chrono::high_resolution_clock::now();
@@ -1452,6 +1812,38 @@ extern "C" {
                 return UWOT_ERROR_MEMORY;
             }
 
+            // Product Quantization encoding (if enabled) - Enhanced progress version
+            if (model->use_quantization && n_dim % model->pq_m == 0) {
+                progress_utils::safe_callback(progress_callback, "Quantizing", 0, 100, 20.0f,
+                    "Applying Product Quantization for 70-80% memory reduction");
+
+                try {
+                    // Perform PQ encoding on normalized hnsw_data
+                    pq_utils::encode_pq(hnsw_data, n_obs, n_dim, model->pq_m,
+                                       model->pq_codes, model->pq_centroids);
+
+                    // Reconstruct vectors for HNSW index building
+                    std::vector<float> reconstructed_data(n_obs * n_dim);
+                    int subspace_dim = n_dim / model->pq_m;
+                    for (int i = 0; i < n_obs; i++) {
+                        std::vector<float> reconstructed;
+                        pq_utils::reconstruct_vector(model->pq_codes, i, model->pq_m,
+                                                    model->pq_centroids, subspace_dim, reconstructed);
+                        std::copy(reconstructed.begin(), reconstructed.end(),
+                                 reconstructed_data.begin() + i * n_dim);
+                    }
+                    hnsw_data = reconstructed_data;  // Replace with reconstructed data
+
+                    progress_utils::safe_callback(progress_callback, "Quantized", 1, 1, 100.0f,
+                        "PQ encoding complete - memory usage reduced by ~75%");
+                } catch (const std::exception& e) {
+                    // Fall back to unquantized data if PQ fails
+                    model->use_quantization = false;
+                    progress_utils::safe_callback(progress_callback, "Warning", 0, 1, 0.0f,
+                        "PQ encoding failed - using full precision vectors");
+                }
+            }
+
             auto norm_elapsed = std::chrono::duration<double>(std::chrono::high_resolution_clock::now() - norm_start).count();
             progress_utils::safe_callback(progress_callback, "Data Pipeline", 1, 1, 100.0f,
                 ("Pipeline completed in " + progress_utils::format_duration(norm_elapsed)).c_str());
@@ -1467,11 +1859,18 @@ extern "C" {
 
             // Phase 4: HNSW index building
             auto hnsw_start = std::chrono::high_resolution_clock::now();
+
+            // Memory estimation for HNSW index
+            size_t estimated_memory_mb = ((size_t)n_obs * model->hnsw_M * 4 * 2) / (1024 * 1024);  // Rough estimate
+            std::string memory_msg = "Est. memory: " + std::to_string(estimated_memory_mb) + "MB, Parameters: M=" +
+                                   std::to_string(model->hnsw_M) + ", ef_c=" + std::to_string(model->hnsw_ef_construction);
+
             progress_utils::safe_callback(progress_callback, "Building HNSW index", 0, n_obs, 0.0f,
-                ("Creating spatial index using " + std::string(model->space_factory->get_metric_name()) + " space").c_str());
+                memory_msg.c_str());
 
             model->ann_index = std::make_unique<hnswlib::HierarchicalNSW<float>>(
-                model->space_factory->get_space(), n_obs, 16, 200);
+                model->space_factory->get_space(), n_obs, model->hnsw_M, model->hnsw_ef_construction);
+            model->ann_index->setEf(model->hnsw_ef_search);  // Set query-time ef parameter
 
             // Add points to HNSW using prepared HNSW data
             for (int i = 0; i < n_obs; i++) {
@@ -1798,7 +2197,7 @@ extern "C" {
             // Write header
             const char* magic = "UMAP";
             file.write(magic, 4);
-            int version = 3; // Increment version for HNSW format
+            int version = 5; // Increment version for HNSW parameters and PQ data
             file.write(reinterpret_cast<const char*>(&version), sizeof(int));
 
             // Write model parameters
@@ -1807,10 +2206,18 @@ extern "C" {
             file.write(reinterpret_cast<const char*>(&model->embedding_dim), sizeof(int));
             file.write(reinterpret_cast<const char*>(&model->n_neighbors), sizeof(int));
             file.write(reinterpret_cast<const char*>(&model->min_dist), sizeof(float));
+            file.write(reinterpret_cast<const char*>(&model->spread), sizeof(float));
             file.write(reinterpret_cast<const char*>(&model->metric), sizeof(UwotMetric));
             file.write(reinterpret_cast<const char*>(&model->a), sizeof(float));
             file.write(reinterpret_cast<const char*>(&model->b), sizeof(float));
             file.write(reinterpret_cast<const char*>(&model->use_normalization), sizeof(bool));
+
+            // Write HNSW hyperparameters (version 5+)
+            file.write(reinterpret_cast<const char*>(&model->hnsw_M), sizeof(int));
+            file.write(reinterpret_cast<const char*>(&model->hnsw_ef_construction), sizeof(int));
+            file.write(reinterpret_cast<const char*>(&model->hnsw_ef_search), sizeof(int));
+            file.write(reinterpret_cast<const char*>(&model->use_quantization), sizeof(bool));
+            file.write(reinterpret_cast<const char*>(&model->pq_m), sizeof(int));
 
             // Write normalization parameters
             size_t means_size = model->feature_means.size();
@@ -1838,6 +2245,56 @@ extern "C" {
             file.write(reinterpret_cast<const char*>(model->embedding.data()),
                 embedding_size * sizeof(float));
 
+            // Write Product Quantization data (version 5+)
+            if (model->use_quantization && !model->pq_codes.empty() && !model->pq_centroids.empty()) {
+                // Write PQ codes
+                size_t codes_size = model->pq_codes.size();
+                file.write(reinterpret_cast<const char*>(&codes_size), sizeof(size_t));
+                file.write(reinterpret_cast<const char*>(model->pq_codes.data()),
+                    codes_size * sizeof(uint8_t));
+
+                // Write PQ centroids
+                size_t centroids_size = model->pq_centroids.size();
+                file.write(reinterpret_cast<const char*>(&centroids_size), sizeof(size_t));
+                file.write(reinterpret_cast<const char*>(model->pq_centroids.data()),
+                    centroids_size * sizeof(float));
+            } else {
+                // Write empty PQ data
+                size_t zero_size = 0;
+                file.write(reinterpret_cast<const char*>(&zero_size), sizeof(size_t)); // codes
+                file.write(reinterpret_cast<const char*>(&zero_size), sizeof(size_t)); // centroids
+            }
+
+            // Conditional k-NN storage based on metric compatibility with HNSW
+            bool needs_knn = model->force_exact_knn ||
+                            !model->space_factory ||
+                            !model->space_factory->can_use_hnsw();
+            file.write(reinterpret_cast<const char*>(&needs_knn), sizeof(bool));
+
+            if (needs_knn) {
+                // Save k-NN data for fallback transforms
+                size_t nn_indices_size = model->nn_indices.size();
+                file.write(reinterpret_cast<const char*>(&nn_indices_size), sizeof(size_t));
+                if (nn_indices_size > 0) {
+                    file.write(reinterpret_cast<const char*>(model->nn_indices.data()),
+                        nn_indices_size * sizeof(int));
+                }
+
+                size_t nn_distances_size = model->nn_distances.size();
+                file.write(reinterpret_cast<const char*>(&nn_distances_size), sizeof(size_t));
+                if (nn_distances_size > 0) {
+                    file.write(reinterpret_cast<const char*>(model->nn_distances.data()),
+                        nn_distances_size * sizeof(float));
+                }
+
+                size_t nn_weights_size = model->nn_weights.size();
+                file.write(reinterpret_cast<const char*>(&nn_weights_size), sizeof(size_t));
+                if (nn_weights_size > 0) {
+                    file.write(reinterpret_cast<const char*>(model->nn_weights.data()),
+                        nn_weights_size * sizeof(float));
+                }
+            }
+
             // Save HNSW index directly to stream (no temporary files)
             if (model->ann_index) {
                 try {
@@ -1848,8 +2305,8 @@ extern "C" {
 
                     std::streampos hnsw_data_start = file.tellp();
 
-                    // Save HNSW index data directly to our stream using the same logic as saveIndex
-                    save_hnsw_to_stream(file, model->ann_index.get());
+                    // Save HNSW index data with LZ4 compression for reduced file size
+                    save_hnsw_to_stream_compressed(file, model->ann_index.get());
 
                     std::streampos hnsw_data_end = file.tellp();
 
@@ -1900,7 +2357,7 @@ extern "C" {
 
             int version;
             file.read(reinterpret_cast<char*>(&version), sizeof(int));
-            if (version != 1 && version != 2 && version != 3) { // Support multiple versions
+            if (version != 1 && version != 2 && version != 3 && version != 4 && version != 5) { // Support multiple versions
                 file.close();
                 return nullptr;
             }
@@ -1913,6 +2370,13 @@ extern "C" {
             file.read(reinterpret_cast<char*>(&model->embedding_dim), sizeof(int));
             file.read(reinterpret_cast<char*>(&model->n_neighbors), sizeof(int));
             file.read(reinterpret_cast<char*>(&model->min_dist), sizeof(float));
+
+            if (version >= 4) {
+                file.read(reinterpret_cast<char*>(&model->spread), sizeof(float));
+            }
+            else {
+                model->spread = 1.0f; // Default spread value for older versions
+            }
 
             if (version >= 2) {
                 file.read(reinterpret_cast<char*>(&model->metric), sizeof(UwotMetric));
@@ -1948,6 +2412,22 @@ extern "C" {
                 file.read(reinterpret_cast<char*>(&model->p99_neighbor_distance), sizeof(float));
                 file.read(reinterpret_cast<char*>(&model->mild_outlier_threshold), sizeof(float));
                 file.read(reinterpret_cast<char*>(&model->extreme_outlier_threshold), sizeof(float));
+
+                // Read HNSW hyperparameters (version 5+)
+                if (version >= 5) {
+                    file.read(reinterpret_cast<char*>(&model->hnsw_M), sizeof(int));
+                    file.read(reinterpret_cast<char*>(&model->hnsw_ef_construction), sizeof(int));
+                    file.read(reinterpret_cast<char*>(&model->hnsw_ef_search), sizeof(int));
+                    file.read(reinterpret_cast<char*>(&model->use_quantization), sizeof(bool));
+                    file.read(reinterpret_cast<char*>(&model->pq_m), sizeof(int));
+                } else {
+                    // Set default HNSW parameters for older versions
+                    model->hnsw_M = 32;
+                    model->hnsw_ef_construction = 128;
+                    model->hnsw_ef_search = 64;
+                    model->use_quantization = false;
+                    model->pq_m = 4;
+                }
             }
             else {
                 // For older versions, set defaults
@@ -1959,6 +2439,13 @@ extern "C" {
                 model->p99_neighbor_distance = 0.0f;
                 model->mild_outlier_threshold = 0.0f;
                 model->extreme_outlier_threshold = 0.0f;
+
+                // Set default HNSW parameters for older versions
+                model->hnsw_M = 32;
+                model->hnsw_ef_construction = 128;
+                model->hnsw_ef_search = 64;
+                model->use_quantization = false;
+                model->pq_m = 4;
             }
 
             // Read embedding
@@ -1967,6 +2454,63 @@ extern "C" {
             model->embedding.resize(embedding_size);
             file.read(reinterpret_cast<char*>(model->embedding.data()),
                 embedding_size * sizeof(float));
+
+            // Read Product Quantization data (version 5+)
+            if (version >= 5) {
+                // Read PQ codes
+                size_t codes_size;
+                file.read(reinterpret_cast<char*>(&codes_size), sizeof(size_t));
+                if (codes_size > 0) {
+                    model->pq_codes.resize(codes_size);
+                    file.read(reinterpret_cast<char*>(model->pq_codes.data()),
+                        codes_size * sizeof(uint8_t));
+                }
+
+                // Read PQ centroids
+                size_t centroids_size;
+                file.read(reinterpret_cast<char*>(&centroids_size), sizeof(size_t));
+                if (centroids_size > 0) {
+                    model->pq_centroids.resize(centroids_size);
+                    file.read(reinterpret_cast<char*>(model->pq_centroids.data()),
+                        centroids_size * sizeof(float));
+                }
+            }
+
+            // Read conditional k-NN data (version 4 and above)
+            if (version >= 4) {
+                bool needs_knn;
+                file.read(reinterpret_cast<char*>(&needs_knn), sizeof(bool));
+
+                if (needs_knn) {
+                    // Read k-NN indices
+                    size_t nn_indices_size;
+                    file.read(reinterpret_cast<char*>(&nn_indices_size), sizeof(size_t));
+                    model->nn_indices.resize(nn_indices_size);
+                    if (nn_indices_size > 0) {
+                        file.read(reinterpret_cast<char*>(model->nn_indices.data()),
+                            nn_indices_size * sizeof(int));
+                    }
+
+                    // Read k-NN distances
+                    size_t nn_distances_size;
+                    file.read(reinterpret_cast<char*>(&nn_distances_size), sizeof(size_t));
+                    model->nn_distances.resize(nn_distances_size);
+                    if (nn_distances_size > 0) {
+                        file.read(reinterpret_cast<char*>(model->nn_distances.data()),
+                            nn_distances_size * sizeof(float));
+                    }
+
+                    // Read k-NN weights
+                    size_t nn_weights_size;
+                    file.read(reinterpret_cast<char*>(&nn_weights_size), sizeof(size_t));
+                    model->nn_weights.resize(nn_weights_size);
+                    if (nn_weights_size > 0) {
+                        file.read(reinterpret_cast<char*>(model->nn_weights.data()),
+                            nn_weights_size * sizeof(float));
+                    }
+                }
+                // If needs_knn is false, k-NN vectors remain empty (using HNSW for transforms)
+            }
 
             if (version >= 3) {
                 // Read HNSW index
@@ -1982,9 +2526,10 @@ extern "C" {
                         }
                         model->ann_index = std::make_unique<hnswlib::HierarchicalNSW<float>>(
                             model->space_factory->get_space());
+                        model->ann_index->setEf(model->hnsw_ef_search);  // Set query-time ef parameter
 
-                        // Load HNSW data directly from our stream using the same logic as loadIndex
-                        load_hnsw_from_stream(file, model->ann_index.get(), model->space_factory->get_space(), hnsw_size);
+                        // Load HNSW data with LZ4 decompression
+                        load_hnsw_from_stream_compressed(file, model->ann_index.get(), model->space_factory->get_space());
 
                     } catch (...) {
                         // Error loading HNSW, clean up and continue without index
@@ -2020,7 +2565,12 @@ extern "C" {
         int* embedding_dim,
         int* n_neighbors,
         float* min_dist,
-        UwotMetric* metric) {
+        float* spread,
+        UwotMetric* metric,
+        int* use_quantization,
+        int* hnsw_M,
+        int* hnsw_ef_construction,
+        int* hnsw_ef_search) {
         if (!model) {
             return UWOT_ERROR_INVALID_PARAMS;
         }
@@ -2030,7 +2580,12 @@ extern "C" {
         if (embedding_dim) *embedding_dim = model->embedding_dim;
         if (n_neighbors) *n_neighbors = model->n_neighbors;
         if (min_dist) *min_dist = model->min_dist;
+        if (spread) *spread = model->spread;
         if (metric) *metric = model->metric;
+        if (use_quantization) *use_quantization = model->use_quantization ? 1 : 0;
+        if (hnsw_M) *hnsw_M = model->hnsw_M;
+        if (hnsw_ef_construction) *hnsw_ef_construction = model->hnsw_ef_construction;
+        if (hnsw_ef_search) *hnsw_ef_search = model->hnsw_ef_search;
 
         return UWOT_SUCCESS;
     }

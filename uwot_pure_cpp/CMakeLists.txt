@@ -18,6 +18,7 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 # Source files (using actual file names in root directory)
 set(UWOT_WRAPPER_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/uwot_simple_wrapper.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/lz4.c
 )
 
 # Core headers (all in root directory)
@@ -109,6 +110,12 @@ if(BUILD_TESTS)
     )
     target_link_libraries(hnsw_validation_test uwot_wrapper)
 
+    # Comprehensive test with PQ and HNSW benchmarking
+    add_executable(comprehensive_test
+        ${CMAKE_CURRENT_SOURCE_DIR}/comprehensive_test.cpp
+    )
+    target_link_libraries(comprehensive_test uwot_wrapper)
+
     # Suppress warnings for test executables
     if(MSVC)
         target_compile_options(test_enhanced_wrapper PRIVATE
@@ -121,12 +128,18 @@ if(BUILD_TESTS)
             /wd4267  # size_t conversion warnings
             /wd4566  # unicode character warnings
         )
+        target_compile_options(comprehensive_test PRIVATE
+            /wd4244  # conversion warnings
+            /wd4267  # size_t conversion warnings
+            /wd4566  # unicode character warnings
+        )
     endif()
 
     # Add tests
     enable_testing()
     add_test(NAME EnhancedWrapperTest COMMAND test_enhanced_wrapper)
     add_test(NAME HNSWValidationTest COMMAND hnsw_validation_test)
+    add_test(NAME ComprehensiveTest COMMAND comprehensive_test)
 endif()
 
 # Package configuration
