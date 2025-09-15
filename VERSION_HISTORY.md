@@ -1,6 +1,34 @@
 # UMAPuwotSharp Version History
 
-## Version 3.2.1 - Enhanced API Documentation + Cross-Platform Validation (Current)
+## Version 3.2.2 - Critical Loss Calculation Fix + Enhanced Monitoring (Current)
+
+### 🐛 CRITICAL FIX RELEASE - Loss Calculation Correction
+- **Fixed UMAP cross-entropy loss reporting**: Now shows proper decreasing loss during training
+- **Corrected attractive force loss**: -log(1/(1 + a*d^2b)) formula implementation
+- **Corrected repulsive force loss**: log(1 + a*d^2b) formula implementation
+- **Enhanced progress monitoring**: Loss values now display proper convergence (3.8 → 2.4)
+
+### ⚠️ IMPORTANT CLARIFICATION
+- **This was a MONITORING/REPORTING bug only** - actual gradient calculations were always correct
+- **All previous embeddings, models, and results remain mathematically valid**
+- **No performance impact** - all HNSW/PQ optimizations unaffected
+- **Upgrade recommended** for better training monitoring and debugging experience
+
+### 🎯 WHAT'S FIXED
+- **Loss curves now decrease properly** during training (was oscillating around 3.0)
+- **Progress callbacks show accurate convergence** information
+- **Better debugging experience** with correct loss visualization
+- **Enhanced training confidence** with proper loss curves
+
+### 📊 EXAMPLE OF FIXED BEHAVIOR
+```
+Before fix: Loss: 3.023 → Loss: 3.104 → Loss: 3.070 (oscillating)
+After fix:  Loss: 3.761 → Loss: 2.884 → Loss: 2.400 (decreasing) ✅
+```
+
+---
+
+## Version 3.2.1 - Enhanced API Documentation + Cross-Platform Validation
 
 ### 🔧 REFINEMENT RELEASE - API Enhancement + Build Validation
 - **Enhanced UMapModelInfo.ToString()**: Now includes ALL model parameters (PQ, HNSW settings)

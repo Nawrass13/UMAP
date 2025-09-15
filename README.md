@@ -623,7 +623,7 @@ HNSW acceleration works with multiple distance metrics:
 ## Version Information
 
 - **Enhanced Native Libraries**: Based on uwot algorithms with revolutionary HNSW optimization
-- **C# Wrapper**: Version 3.2.1+ (UMAPuwotSharp with HNSW + PQ)
+- **C# Wrapper**: Version 3.2.2+ (UMAPuwotSharp with HNSW + PQ + Fixed Loss)
 - **Target Framework**: .NET 8.0
 - **Supported Platforms**: Windows x64, Linux x64 (both with HNSW optimization)
 - **Key Features**: HNSW k-NN optimization, Production safety, Multi-dimensional (1D-50D), Multi-metric, Enhanced progress reporting, OpenMP parallelization
@@ -632,6 +632,7 @@ HNSW acceleration works with multiple distance metrics:
 
 | Version | Release Date | Key Features | Performance |
 |---------|--------------|--------------|-------------|
+| **3.2.2** | 2025-01-15 | **Critical loss calculation fix**, Proper decreasing loss curves, Enhanced training monitoring | Fixed loss reporting bug (monitoring only) |
 | **3.2.1** | 2025-01-15 | Enhanced ToString() API, Complete model parameter display, Cross-platform binary validation | Improved debugging and monitoring |
 | **3.2.0** | 2025-01-15 | **Product Quantization system**, HNSW hyperparameter control, Enhanced memory estimation, 70-80% file compression | **Storage optimization**, dataset-aware auto-scaling |
 | **3.1.2** | 2025-01-15 | Smart spread parameter implementation, Dimension-aware defaults, Enhanced progress reporting | Optimal embedding quality across dimensions |

@@ -18,6 +18,29 @@
 #endif
 #include <vector>
 #include <memory>
+
+// Global variables for passing information to v2 callbacks
+static thread_local float g_current_epoch_loss = 0.0f;
+thread_local uwot_progress_callback_v2 g_v2_callback = nullptr;
+
+// Helper functions to send warnings/errors to v2 callback
+void send_warning_to_callback(const char* warning_text) {
+    if (g_v2_callback) {
+        g_v2_callback("Warning", 0, 1, 0.0f, warning_text);
+    } else {
+        // Fallback to console if no callback
+        printf("[WARNING] %s\n", warning_text);
+    }
+}
+
+void send_error_to_callback(const char* error_text) {
+    if (g_v2_callback) {
+        g_v2_callback("Error", 0, 1, 0.0f, error_text);
+    } else {
+        // Fallback to console if no callback
+        printf("[ERROR] %s\n", error_text);
+    }
+}
 // LZ4 compression support for fast model storage
 #include "lz4.h"
 #define COMPRESSION_AVAILABLE true
@@ -588,6 +611,33 @@ struct UwotModel {
 
 // Product Quantization helper functions
 namespace pq_utils {
+    // Calculate optimal number of PQ subspaces (pq_m) for given dimension
+    // Finds largest divisor of n_dim that creates subspaces with ≥ min_subspace_dim dimensions
+    // Prioritizes common values (2, 4, 8, 16) for optimal performance
+    int calculate_optimal_pq_m(int n_dim, int min_subspace_dim = 4) {
+        if (n_dim < min_subspace_dim) {
+            return 1; // Disable PQ for very small dimensions
+        }
+
+        // Preferred pq_m values in order of preference (larger = more compression)
+        std::vector<int> preferred_values = {16, 8, 4, 2};
+
+        for (int pq_m : preferred_values) {
+            if (n_dim % pq_m == 0 && (n_dim / pq_m) >= min_subspace_dim) {
+                return pq_m;
+            }
+        }
+
+        // If preferred values don't work, find largest suitable divisor
+        for (int pq_m = n_dim / min_subspace_dim; pq_m >= 1; pq_m--) {
+            if (n_dim % pq_m == 0) {
+                return pq_m;
+            }
+        }
+
+        return 1; // Fallback: disable PQ
+    }
+
     // Simple k-means clustering for PQ codebook generation
     void simple_kmeans(const std::vector<float>& data, int n_points, int dim, int k,
                        std::vector<float>& centroids, std::vector<int>& assignments) {
@@ -1385,7 +1435,7 @@ extern "C" {
 
         return uwot_fit_with_progress(model, data, n_obs, n_dim, embedding_dim,
             n_neighbors, min_dist, spread, n_epochs, metric,
-            embedding, nullptr, force_exact_knn);
+            embedding, nullptr, force_exact_knn, 1, -1, -1, -1, -1);
     }
 
     UWOT_API int uwot_fit_with_progress(UwotModel* model,
@@ -1404,7 +1454,8 @@ extern "C" {
         int use_quantization,
         int M,
         int ef_construction,
-        int ef_search) {
+        int ef_search,
+        int pq_subspaces) {
 
         if (!model || !data || !embedding || n_obs <= 0 || n_dim <= 0 ||
             embedding_dim <= 0 || n_neighbors <= 0 || n_epochs <= 0) {
@@ -1461,10 +1512,20 @@ extern "C" {
 
             // Product Quantization encoding (if enabled)
             std::vector<float> hnsw_data; // Data to use for HNSW (either normalized or reconstructed)
-            if (model->use_quantization && n_dim % model->pq_m == 0) {
-                if (progress_callback) {
-                    progress_callback(10, 100, 10.0f);  // Show PQ progress
+            if (model->use_quantization) {
+                // Use manual pq_subspaces if provided, otherwise calculate optimal
+                int optimal_pq_m;
+                if (pq_subspaces > 0) {
+                    optimal_pq_m = pq_subspaces;
+                } else {
+                    optimal_pq_m = pq_utils::calculate_optimal_pq_m(n_dim);
                 }
+                model->pq_m = optimal_pq_m;
+
+                if (optimal_pq_m > 1) {
+                    if (progress_callback) {
+                        progress_callback(10, 100, 10.0f);  // Show PQ progress
+                    }
 
                 try {
                     // Perform PQ encoding
@@ -1488,10 +1549,16 @@ extern "C" {
                 } catch (const std::exception& e) {
                     // Fall back to unquantized data if PQ fails
                     model->use_quantization = false;
+                    model->pq_m = 1;
+                    hnsw_data = normalized_data;
+                }
+                } else {
+                    // PQ disabled due to unsuitable dimensions (pq_m = 1)
+                    model->use_quantization = false;
                     hnsw_data = normalized_data;
                 }
             } else {
-                // Use normalized data directly
+                // Use normalized data directly (quantization explicitly disabled)
                 hnsw_data = normalized_data;
             }
 
@@ -1525,9 +1592,11 @@ extern "C" {
             std::vector<int> nn_indices;
             std::vector<double> nn_distances;
 
-            // Create wrapper for old callback to new callback
-            // Use nullptr for now since build_knn_graph handles nullptr gracefully
+            // Create wrapper for passing warnings to v2 callback if available
             uwot_progress_callback_v2 wrapped_callback = nullptr;
+            if (g_v2_callback) {
+                wrapped_callback = g_v2_callback;  // Pass warnings directly to v2 callback
+            }
 
             build_knn_graph(normalized_data, n_obs, n_dim, n_neighbors, metric, model,
                 nn_indices, nn_distances, force_exact_knn, wrapped_callback);
@@ -1622,10 +1691,10 @@ extern "C" {
                             model->embedding[j * static_cast<size_t>(embedding_dim) + static_cast<size_t>(d)] -= grad;
                         }
 
-                        // Accumulate attractive force loss (cross-entropy component)
+                        // Accumulate attractive force loss (UMAP cross-entropy: attractive term)
                         if (loss_samples < 1000) { // Sample subset for performance
-                            float prob = 1.0f / (1.0f + model->a * pd2b);
-                            epoch_loss += -std::log(prob + 1e-8f);
+                            float attractive_term = 1.0f / (1.0f + model->a * pd2b);
+                            epoch_loss += -std::log(attractive_term + 1e-8f);  // Negative log-probability for attraction
                             loss_samples++;
                         }
                     }
@@ -1658,10 +1727,10 @@ extern "C" {
                                 model->embedding[i * static_cast<size_t>(embedding_dim) + static_cast<size_t>(d)] += grad;
                             }
 
-                            // Accumulate repulsive force loss (cross-entropy component)
+                            // Accumulate repulsive force loss (UMAP cross-entropy: repulsive term)
                             if (loss_samples < 1000) { // Sample subset for performance
-                                float prob = model->a * std::pow(neg_dist_sq, model->b) / (1.0f + model->a * std::pow(neg_dist_sq, model->b));
-                                epoch_loss += -std::log(1.0f - prob + 1e-8f);
+                                float repulsive_term = model->a * std::pow(neg_dist_sq, model->b);
+                                epoch_loss += std::log(1.0f + repulsive_term + 1e-8f);  // Log(1 + repulsive) for repulsion
                                 loss_samples++;
                             }
                         }
@@ -1676,8 +1745,12 @@ extern "C" {
                 if (should_report) {
                     float percent = (static_cast<float>(epoch + 1) / static_cast<float>(n_epochs)) * 100.0f;
 
+                    // Calculate average loss for this epoch (shared by both callback and console)
+                    float avg_loss = loss_samples > 0 ? epoch_loss / loss_samples : 0.0f;
+
                     if (progress_callback) {
-                        // Use callback for C# integration
+                        // Use callback for C# integration - pass loss info in global variable
+                        g_current_epoch_loss = avg_loss;  // Store for v2 callback wrapper
                         progress_callback(epoch + 1, n_epochs, percent);
                     }
                     else {
@@ -1694,8 +1767,6 @@ extern "C" {
                             else if (i == filled && percent_int % 5 >= 2) std::printf(">");
                             else std::printf(" ");
                         }
-                        // Calculate average loss for this epoch
-                        float avg_loss = loss_samples > 0 ? epoch_loss / loss_samples : 0.0f;
 
                         std::printf("] %d%% (Epoch %d/%d) Loss: %.3f [%lldms]",
                             percent_int, epoch + 1, n_epochs, avg_loss, static_cast<long long>(elapsed.count()));
@@ -1740,7 +1811,8 @@ extern "C" {
         int use_quantization,
         int M,
         int ef_construction,
-        int ef_search) {
+        int ef_search,
+        int pq_subspaces) {
 
         if (!model || !data || !embedding || n_obs <= 0 || n_dim <= 0 ||
             embedding_dim <= 0 || n_neighbors <= 0 || n_epochs <= 0) {
@@ -1813,9 +1885,23 @@ extern "C" {
             }
 
             // Product Quantization encoding (if enabled) - Enhanced progress version
-            if (model->use_quantization && n_dim % model->pq_m == 0) {
-                progress_utils::safe_callback(progress_callback, "Quantizing", 0, 100, 20.0f,
-                    "Applying Product Quantization for 70-80% memory reduction");
+            if (model->use_quantization) {
+                // Use manual pq_subspaces if provided, otherwise calculate optimal
+                int optimal_pq_m;
+                if (pq_subspaces > 0) {
+                    optimal_pq_m = pq_subspaces;
+                } else {
+                    optimal_pq_m = pq_utils::calculate_optimal_pq_m(n_dim);
+                }
+                model->pq_m = optimal_pq_m;
+
+                if (optimal_pq_m > 1) {
+                    char pq_msg[256];
+                    int subspace_dim = n_dim / optimal_pq_m;
+                    snprintf(pq_msg, sizeof(pq_msg),
+                        "Applying PQ: %dD → %d subspaces × %dD (est. 70-80%% size reduction)",
+                        n_dim, optimal_pq_m, subspace_dim);
+                    progress_utils::safe_callback(progress_callback, "Quantizing", 0, 100, 20.0f, pq_msg);
 
                 try {
                     // Perform PQ encoding on normalized hnsw_data
@@ -1837,10 +1923,24 @@ extern "C" {
                     progress_utils::safe_callback(progress_callback, "Quantized", 1, 1, 100.0f,
                         "PQ encoding complete - memory usage reduced by ~75%");
                 } catch (const std::exception& e) {
-                    // Fall back to unquantized data if PQ fails
+                    // Enhanced error handling for PQ failures
                     model->use_quantization = false;
-                    progress_utils::safe_callback(progress_callback, "Warning", 0, 1, 0.0f,
-                        "PQ encoding failed - using full precision vectors");
+                    model->pq_m = 1;
+
+                    std::string error_msg = "PQ encoding failed: ";
+                    error_msg += e.what();
+                    error_msg += " - falling back to full precision vectors";
+
+                    progress_utils::safe_callback(progress_callback, "Warning", 0, 1, 0.0f, error_msg.c_str());
+                }
+                } else {
+                    // PQ disabled due to unsuitable dimensions (pq_m = 1)
+                    model->use_quantization = false;
+
+                    char disable_msg[200];
+                    snprintf(disable_msg, sizeof(disable_msg),
+                        "PQ disabled - dimension %d not suitable for quantization (requires divisible subspaces)", n_dim);
+                    progress_utils::safe_callback(progress_callback, "Info", 0, 1, 0.0f, disable_msg);
                 }
             }
 
@@ -1943,7 +2043,7 @@ extern "C" {
             // Call existing implementation for the remaining UMAP steps (temporarily)
             // This will be replaced with full implementation in later tasks
             int result = uwot_fit_with_progress(model, data, n_obs, n_dim, embedding_dim,
-                n_neighbors, min_dist, 1.0f, n_epochs, metric, embedding, nullptr, force_exact_knn);
+                n_neighbors, min_dist, 1.0f, n_epochs, metric, embedding, nullptr, force_exact_knn, 1, -1, -1, -1, -1);
 
             if (result == UWOT_SUCCESS) {
                 auto total_elapsed = std::chrono::duration<double>(std::chrono::high_resolution_clock::now() - start_time).count();
@@ -1957,6 +2057,84 @@ extern "C" {
             progress_utils::safe_callback(progress_callback, "Error", 0, 1, 0.0f, "An error occurred during training");
             return UWOT_ERROR_MEMORY;
         }
+    }
+
+    // Enhanced v2 function with loss reporting - delegates to existing function
+    // The loss reporting will be added by modifying the core training loop
+    UWOT_API int uwot_fit_with_progress_v2(UwotModel* model,
+        float* data,
+        int n_obs,
+        int n_dim,
+        int embedding_dim,
+        int n_neighbors,
+        float min_dist,
+        float spread,
+        int n_epochs,
+        UwotMetric metric,
+        float* embedding,
+        uwot_progress_callback_v2 progress_callback,
+        int force_exact_knn,
+        int use_quantization,
+        int M,
+        int ef_construction,
+        int ef_search,
+        int pq_subspaces) {
+
+        if (!model || !data || !embedding || n_obs <= 0 || n_dim <= 0 ||
+            embedding_dim <= 0 || n_neighbors <= 0 || n_epochs <= 0) {
+            if (progress_callback) {
+                progress_callback("Error", 0, 1, 0.0f, "Invalid parameters: model, data, or embedding parameters are invalid");
+            }
+            return UWOT_ERROR_INVALID_PARAMS;
+        }
+
+        if (embedding_dim > 50) {
+            if (progress_callback) {
+                progress_callback("Error", 0, 1, 0.0f, "Invalid parameter: embedding dimension must be <= 50");
+            }
+            return UWOT_ERROR_INVALID_PARAMS;
+        }
+
+        try {
+            // Create v1 callback wrapper for epoch progress (with loss)
+            // The global callback is managed separately via SetGlobalCallback API
+            static thread_local uwot_progress_callback_v2 g_local_v2_callback = nullptr;
+            g_local_v2_callback = progress_callback;
+
+            uwot_progress_callback v1_callback = nullptr;
+            if (progress_callback) {
+                v1_callback = [](int epoch, int total_epochs, float percent) {
+                    if (g_local_v2_callback) {
+                        // Format loss message with current loss value
+                        char message[256];
+                        snprintf(message, sizeof(message), "Loss: %.3f", g_current_epoch_loss);
+                        g_local_v2_callback("Training", epoch, total_epochs, percent, message);
+                    }
+                };
+            }
+
+            return uwot_fit_with_progress(model, data, n_obs, n_dim, embedding_dim,
+                n_neighbors, min_dist, spread, n_epochs, metric, embedding,
+                v1_callback, force_exact_knn, use_quantization, M, ef_construction, ef_search, pq_subspaces);
+
+        } catch (...) {
+            const char* error_msg = "An error occurred during training";
+            if (progress_callback) {
+                progress_callback("Error", 0, 1, 0.0f, error_msg);
+            } else {
+                send_error_to_callback(error_msg);
+            }
+            return UWOT_ERROR_MEMORY;
+        }
+    }
+
+    // Global callback management functions
+    UWOT_API void uwot_set_global_callback(uwot_progress_callback_v2 callback) {
+        g_v2_callback = callback;
+    }
+
+    UWOT_API void uwot_clear_global_callback() {
+        g_v2_callback = nullptr;
     }
 
     UWOT_API int uwot_transform(UwotModel* model,

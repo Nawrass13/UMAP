@@ -11,6 +11,20 @@ namespace UMAPExample
         {
             Console.WriteLine("=== Complete Enhanced UMAP Wrapper Demo ===\n");
 
+            // Set up global callback to catch all warnings and errors
+            UMapModel.SetGlobalCallback((phase, current, total, percent, message) => {
+                if (phase == "Warning") {
+                    Console.WriteLine($"⚠️  GLOBAL WARNING: {message}");
+                } else if (phase == "Error") {
+                    Console.WriteLine($"❌ GLOBAL ERROR: {message}");
+                } else if (phase.Contains("k-NN") || phase.Contains("HNSW")) {
+                    Console.WriteLine($"🔍 GLOBAL INFO: {phase} - {message}");
+                }
+                // Skip regular training progress since we have local callbacks for those
+            });
+
+            Console.WriteLine("Global callback set to capture warnings and errors...\n");
+
             try
             {
                 // Demo 1: 27D Embedding with Progress Reporting
@@ -39,6 +53,12 @@ namespace UMAPExample
                 Console.WriteLine($"Error: {ex.Message}");
                 Console.WriteLine($"Stack trace: {ex.StackTrace}");
             }
+            finally
+            {
+                // Clean up global callback
+                UMapModel.ClearGlobalCallback();
+                Console.WriteLine("Global callback cleared.");
+            }
         }
 
         static void Demo27DEmbeddingWithProgress()
@@ -64,7 +84,7 @@ namespace UMAPExample
 
             var embedding = model.FitWithProgress(
                 data: data,
-                progressCallback: (epoch, totalEpochs, percent) =>
+                progressCallback: (phase, current, total, percent, message) =>
                 {
                     var currentPercent = (int)percent;
                     if (currentPercent != lastPercent && currentPercent % 2 == 0) // Update every 2%
@@ -78,7 +98,8 @@ namespace UMAPExample
                             progressBar[i] = i < filled ? '█' : '░';
                         }
 
-                        Console.Write($"\r  Progress: [{new string(progressBar)}] {percent:F1}% (Epoch {epoch}/{totalEpochs})");
+                        var lossInfo = !string.IsNullOrEmpty(message) ? $" - {message}" : "";
+                        Console.Write($"\r  Progress: [{new string(progressBar)}] {percent:F1}% (Epoch {current}/{total}){lossInfo}");
                     }
                 },
                 embeddingDimension: embeddingDim,
@@ -117,15 +138,16 @@ namespace UMAPExample
 
                 using var model = new UMapModel();
 
-                // Use progress callback for larger dimensions
+                // Use enhanced progress callback for larger dimensions
                 ProgressCallback? progressCallback = null;
                 if (dim >= 20)
                 {
-                    progressCallback = (epoch, totalEpochs, percent) =>
+                    progressCallback = (phase, current, total, percent, message) =>
                     {
-                        if (epoch % 25 == 0 || epoch == totalEpochs) // Report every 25 epochs
+                        if (current % 25 == 0 || current == total) // Report every 25 epochs
                         {
-                            Console.Write($"\r    Training {dim}D: {percent:F0}% ");
+                            string msg = !string.IsNullOrEmpty(message) ? $" ({message})" : "";
+                            Console.Write($"\r    {phase} {dim}D: {percent:F0}%{msg} ");
                         }
                     };
                 }
@@ -197,11 +219,12 @@ namespace UMAPExample
 
                     var trainEmbedding = model.FitWithProgress(
                         trainData,
-                        progressCallback: (epoch, totalEpochs, percent) =>
+                        progressCallback: (phase, current, total, percent, message) =>
                         {
-                            if (epoch % 20 == 0 || epoch == totalEpochs)
+                            if (current % 20 == 0 || current == total)
                             {
-                                Console.Write($"\r  Training progress: {percent:F0}% (Epoch {epoch}/{totalEpochs})");
+                                var lossInfo = !string.IsNullOrEmpty(message) ? $" - {message}" : "";
+                                Console.Write($"\r  Training progress: {percent:F0}% (Epoch {current}/{total}){lossInfo}");
                             }
                         },
                         embeddingDimension: 5,
@@ -277,11 +300,12 @@ namespace UMAPExample
                 var metricName = UMapModel.GetMetricName(metric);
                 var embedding = model.FitWithProgress(
                     data,
-                    progressCallback: (epoch, totalEpochs, percent) =>
+                    progressCallback: (phase, current, total, percent, message) =>
                     {
-                        if (epoch % 15 == 0 || epoch == totalEpochs)
+                        if (current % 15 == 0 || current == total)
                         {
-                            Console.Write($"\r  {metricName}: {percent:F0}% ");
+                            var lossInfo = !string.IsNullOrEmpty(message) ? $" - {message}" : "";
+                            Console.Write($"\r  {metricName}: {percent:F0}%{lossInfo} ");
                         }
                     },
                     embeddingDimension: 2,
@@ -315,9 +339,9 @@ namespace UMAPExample
             Console.WriteLine("Training model for safety analysis...");
             var trainEmbedding = model.FitWithProgress(
                 trainData,
-                progressCallback: (epoch, totalEpochs, percent) =>
+                progressCallback: (phase, current, total, percent, message) =>
                 {
-                    if (epoch % 30 == 0 || epoch == totalEpochs)
+                    if (current % 30 == 0 || current == total)
                     {
                         Console.Write($"\r  Training: {percent:F0}%");
                     }
