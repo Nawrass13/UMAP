@@ -17,7 +17,7 @@
     <Company>ID Soft AB</Company>
     <Product>UMAPuwotSharp Enhanced with HNSW</Product>
     <Title>UMAP for .NET with HNSW Optimization &amp; AI Safety</Title>
-    <Description>Revolutionary UMAP library with HNSW optimization providing 50-2000x faster transforms and production safety features. Unique capabilities: HNSW (Hierarchical Navigable Small World) optimization, 5-level outlier detection (Normal to No Man's Land), 80% memory reduction, AI/ML data validation, arbitrary dimensions (1D-50D), multiple metrics, progress reporting, and complete model persistence. Perfect for production AI pipelines requiring data quality assessment.</Description>
+    <Description>Revolutionary UMAP library with HNSW optimization providing 50-2000x faster transforms and production safety features. NEW: Spread parameter for t-SNE-like embeddings! Unique capabilities: HNSW (Hierarchical Navigable Small World) optimization, smart dimension-based defaults (2D: spread=5.0, min_dist=0.35), 5-level outlier detection (Normal to No Man's Land), 80% memory reduction, AI/ML data validation, arbitrary dimensions (1D-50D), multiple metrics, progress reporting, and complete model persistence. Perfect for production AI pipelines requiring data quality assessment.</Description>
     <PackageTags>umap;uwot;hnsw;ai-safety;outlier-detection;dimensionality-reduction;machine-learning;embedding;manifold-learning;production-ml;data-validation;nearest-neighbors;performance-optimization;memory-efficient;multi-dimensional;progress-reporting;model-persistence</PackageTags>
     <RepositoryUrl>https://github.com/78Spinoza/UMAP</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
@@ -25,13 +25,20 @@
     <PackageProjectUrl>https://github.com/78Spinoza/UMAP</PackageProjectUrl>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageReleaseNotes>
-🔧 CRITICAL UPDATE - UMAP v3.1.1: Enhanced Linux HNSW Binary
+🆕 MAJOR FEATURE RELEASE - UMAP v3.1.1: Spread Parameter Implementation
 
-⚡ PERFORMANCE ENHANCEMENT:
-- Updated Linux library with complete HNSW optimization (211KB vs 174KB)
-- Fixed cross-platform binary parity for consistent performance
-- Enhanced Docker build process for reliable cross-compilation
-- All platforms now have identical HNSW acceleration capabilities
+🎯 NEW HYPERPARAMETER CONTROL:
+- Complete spread parameter implementation based on official UMAP algorithm
+- Smart dimension-based defaults: 2D=5.0, 10D=2.0, 24D+=1.0 for optimal results
+- t-SNE-like space-filling behavior with spread=5.0 (your research-proven optimal setting)
+- Mathematical curve fitting: proper a,b calculation from spread and min_dist
+- Enhanced API: nullable parameters with intelligent auto-optimization
+
+🧠 RESEARCH-BACKED SMART DEFAULTS:
+- 2D Visualization: spread=5.0, min_dist=0.35, neighbors=25 (optimal for space-filling)
+- 10-20D Clustering: spread=1.5-2.0 for balanced manifold preservation
+- 24D+ ML Pipeline: spread=1.0 for tight cluster coherence
+- Backward compatible: existing code works with automatic optimization
 
 🚀 CONTINUES v3.1.0 REVOLUTION: Revolutionary HNSW k-NN Optimization
 

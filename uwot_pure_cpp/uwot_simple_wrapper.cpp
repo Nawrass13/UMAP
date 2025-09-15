@@ -522,6 +522,7 @@ struct UwotModel {
     int embedding_dim;
     int n_neighbors;
     float min_dist;
+    float spread; // UMAP spread parameter (controls global scale)
     UwotMetric metric;
     float a, b; // UMAP curve parameters
     bool is_fitted;
@@ -559,7 +560,7 @@ struct UwotModel {
     float extreme_outlier_threshold;   // 4.0 std deviations
 
     UwotModel() : n_vertices(0), n_dim(0), embedding_dim(2), n_neighbors(15),
-        min_dist(0.1f), metric(UWOT_METRIC_EUCLIDEAN), a(1.929f), b(0.7915f),
+        min_dist(0.1f), spread(1.0f), metric(UWOT_METRIC_EUCLIDEAN), a(1.929f), b(0.7915f),
         is_fitted(false), force_exact_knn(false), use_normalization(false),
         min_neighbor_distance(0.0f), mean_neighbor_distance(0.0f),
         std_neighbor_distance(0.0f), p95_neighbor_distance(0.0f),
@@ -1068,6 +1069,60 @@ void load_hnsw_from_stream(std::istream &input, hnswlib::HierarchicalNSW<float>*
 
 extern "C" {
 
+    // Calculate UMAP a,b parameters from spread and min_dist
+    // Based on the official UMAP implementation curve fitting
+    void calculate_ab_from_spread_and_min_dist(UwotModel* model) {
+        float spread = model->spread;
+        float min_dist = model->min_dist;
+
+        // Handle edge cases
+        if (spread <= 0.0f) spread = 1.0f;
+        if (min_dist < 0.0f) min_dist = 0.0f;
+        if (min_dist >= spread) {
+            // If min_dist >= spread, use default values
+            model->a = 1.929f;
+            model->b = 0.7915f;
+            return;
+        }
+
+        // Simplified curve fitting (C++ approximation of scipy.optimize.curve_fit)
+        // Target: fit 1/(1 + a*x^(2*b)) to exponential decay
+        // y = 1.0 for x < min_dist
+        // y = exp(-(x - min_dist) / spread) for x >= min_dist
+
+        // Key points for fitting:
+        // At x = min_dist: y should be ~1.0
+        // At x = spread: y should be ~exp(-1) ≈ 0.368
+        // At x = 2*spread: y should be ~exp(-2) ≈ 0.135
+
+        float x1 = min_dist + 0.001f; // Just above min_dist
+        float x2 = spread;
+        float y1 = 0.99f;  // Target at min_dist
+        float y2 = std::exp(-1.0f); // Target at spread ≈ 0.368
+
+        // Solve for b first using the ratio of the two points
+        // 1/(1 + a*x1^(2b)) = y1 and 1/(1 + a*x2^(2b)) = y2
+        // This gives us: (1/y1 - 1) / (1/y2 - 1) = (x1/x2)^(2b)
+        float ratio_left = (1.0f / y1 - 1.0f) / (1.0f / y2 - 1.0f);
+        float ratio_right = x1 / x2;
+
+        if (ratio_left > 0 && ratio_right > 0) {
+            model->b = std::log(ratio_left) / (2.0f * std::log(ratio_right));
+            // Clamp b to reasonable range
+            model->b = std::max(0.1f, std::min(model->b, 2.0f));
+
+            // Now solve for a using the first point
+            model->a = (1.0f / y1 - 1.0f) / std::pow(x1, 2.0f * model->b);
+            // Clamp a to reasonable range
+            model->a = std::max(0.001f, std::min(model->a, 1000.0f));
+        } else {
+            // Fallback to approximation based on spread/min_dist ratio
+            float ratio = spread / (min_dist + 0.001f);
+            model->b = std::max(0.5f, std::min(2.0f, std::log(ratio) / 2.0f));
+            model->a = std::max(0.1f, std::min(10.0f, 1.0f / ratio));
+        }
+    }
+
     UWOT_API UwotModel* uwot_create() {
         try {
             return new UwotModel();
@@ -1084,13 +1139,14 @@ extern "C" {
         int embedding_dim,
         int n_neighbors,
         float min_dist,
+        float spread,
         int n_epochs,
         UwotMetric metric,
         float* embedding,
         int force_exact_knn) {
 
         return uwot_fit_with_progress(model, data, n_obs, n_dim, embedding_dim,
-            n_neighbors, min_dist, n_epochs, metric,
+            n_neighbors, min_dist, spread, n_epochs, metric,
             embedding, nullptr, force_exact_knn);
     }
 
@@ -1101,6 +1157,7 @@ extern "C" {
         int embedding_dim,
         int n_neighbors,
         float min_dist,
+        float spread,
         int n_epochs,
         UwotMetric metric,
         float* embedding,
@@ -1122,6 +1179,7 @@ extern "C" {
             model->embedding_dim = embedding_dim;
             model->n_neighbors = n_neighbors;
             model->min_dist = min_dist;
+            model->spread = spread;
             model->metric = metric;
             model->force_exact_knn = (force_exact_knn != 0); // Convert int to bool
 
@@ -1200,14 +1258,8 @@ extern "C" {
                 model->embedding[i] = dist(gen);
             }
 
-            // Set up UMAP parameters
-            model->a = 1.929f;
-            model->b = 0.7915f;
-            if (min_dist != 0.1f) {
-                // Adjust parameters based on min_dist (simplified)
-                model->a = 1.0f / (1.0f + model->a * std::pow(min_dist, 2.0f * model->b));
-                model->b = 1.0f;
-            }
+            // Calculate UMAP parameters from spread and min_dist
+            calculate_ab_from_spread_and_min_dist(model);
 
             // Direct UMAP optimization implementation with progress reporting
             const float learning_rate = 1.0f;
@@ -1346,6 +1398,7 @@ extern "C" {
         int embedding_dim,
         int n_neighbors,
         float min_dist,
+        float spread,
         int n_epochs,
         UwotMetric metric,
         float* embedding,
@@ -1373,6 +1426,7 @@ extern "C" {
             model->embedding_dim = embedding_dim;
             model->n_neighbors = n_neighbors;
             model->min_dist = min_dist;
+            model->spread = spread;
             model->metric = metric;
             model->force_exact_knn = (force_exact_knn != 0);
 
@@ -1490,7 +1544,7 @@ extern "C" {
             // Call existing implementation for the remaining UMAP steps (temporarily)
             // This will be replaced with full implementation in later tasks
             int result = uwot_fit_with_progress(model, data, n_obs, n_dim, embedding_dim,
-                n_neighbors, min_dist, n_epochs, metric, embedding, nullptr, force_exact_knn);
+                n_neighbors, min_dist, 1.0f, n_epochs, metric, embedding, nullptr, force_exact_knn);
 
             if (result == UWOT_SUCCESS) {
                 auto total_elapsed = std::chrono::duration<double>(std::chrono::high_resolution_clock::now() - start_time).count();

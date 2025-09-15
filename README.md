@@ -90,105 +90,78 @@ var exactEmbedding = model.Fit(data, forceExactKnn: true);   // Traditional appr
 
 ## Enhanced Features
 
-### 🚀 **Arbitrary Embedding Dimensions (1D to 50D)**
-```csharp
-// Standard 2D visualization
-var embedding2D = model.Fit(data, embeddingDimension: 2);
-
-// High-dimensional embeddings for feature extraction
-var embedding27D = model.Fit(data, embeddingDimension: 27);  // Perfect for specialized ML pipelines
-var embedding50D = model.Fit(data, embeddingDimension: 50);  // Maximum supported
-
-// Even 1D embeddings for specialized use cases
-var embedding1D = model.Fit(data, embeddingDimension: 1);
-```
-
-### 📊 **Multiple Distance Metrics**
-Choose the optimal distance metric for your data type:
+### 🎯 **Smart Spread Parameter for Optimal Embeddings**
+**NEW in v3.1.1**: Complete spread parameter implementation with dimension-aware defaults!
 
 ```csharp
-// Euclidean (default) - general-purpose data
-var euclidean = model.Fit(data, metric: DistanceMetric.Euclidean);
+// Automatic spread optimization based on dimensions
+var embedding2D = model.Fit(data, embeddingDimension: 2);  // Auto: spread=5.0 (t-SNE-like)
+var embedding10D = model.Fit(data, embeddingDimension: 10); // Auto: spread=2.0 (balanced)
+var embedding27D = model.Fit(data, embeddingDimension: 27); // Auto: spread=1.0 (compact)
 
-// Cosine - excellent for high-dimensional sparse data (text, images)
-var cosine = model.Fit(data, metric: DistanceMetric.Cosine);
-
-// Manhattan - robust to outliers
-var manhattan = model.Fit(data, metric: DistanceMetric.Manhattan);
-
-// Correlation - measures linear relationships, good for time series
-var correlation = model.Fit(data, metric: DistanceMetric.Correlation);
-
-// Hamming - for binary or categorical data
-var hamming = model.Fit(data, metric: DistanceMetric.Hamming);
-```
-
-### ⏱️ **Real-Time Progress Reporting**
-Get live feedback during training with customizable progress callbacks:
-
-```csharp
-var embedding = model.FitWithProgress(
-    data,
-    progressCallback: (epoch, totalEpochs, percent) =>
-    {
-        Console.WriteLine($"Training: {percent:F1}% (Epoch {epoch}/{totalEpochs})");
-        // Update UI progress bar, log to file, etc.
-    },
-    embeddingDimension: 27,
-    nEpochs: 500
+// Manual spread control for fine-tuning
+var customEmbedding = model.Fit(data,
+    embeddingDimension: 2,
+    spread: 5.0f,          // Space-filling visualization
+    minDist: 0.35f,        // Minimum point separation
+    nNeighbors: 25         // Optimal for 2D visualization
 );
+
+// Research-backed optimal combinations:
+// 2D Visualization: spread=5.0, minDist=0.35, neighbors=25
+// 10-20D Clustering: spread=1.5-2.0, minDist=0.1-0.2
+// 24D+ ML Pipeline: spread=1.0, minDist=0.1
 ```
 
-### 🔧 **Complete API Example**
+### 🚀 **Key Features**
+- **Arbitrary dimensions**: 1D to 50D embeddings
+- **Multiple distance metrics**: Euclidean, Cosine, Manhattan, Correlation, Hamming
+- **Smart spread defaults**: Automatic optimization based on embedding dimensions
+
+- **Real-time progress reporting**: Live training feedback with callbacks
+- **HNSW optimization**: 50-2000x faster with 80-85% memory reduction
+- **Model persistence**: Save/load trained models for production use
+- **Safety features**: 5-level outlier detection for AI validation
+
+### 🔧 **Complete API Example with Spread Parameter**
 ```csharp
 using UMAPuwotSharp;
 
 // Create model with enhanced features
 using var model = new UMapModel();
 
-// Train with HNSW optimization, progress reporting, and custom settings
+// Train with smart defaults and progress reporting
 var embedding = model.FitWithProgress(
     data: trainingData,
     progressCallback: (epoch, total, percent) =>
     {
-        if (epoch % 50 == 0)
-            Console.WriteLine($"Progress: {percent:F0}%");
+        Console.WriteLine($"Progress: {percent:F1}%");
     },
-    embeddingDimension: 27,        // Any dimension 1-50
-    nNeighbors: 20,
-    minDist: 0.05f,
+    embeddingDimension: 2,         // 2D visualization
+    spread: 5.0f,                  // NEW: t-SNE-like space-filling
+    minDist: 0.35f,                // Optimal separation
+    nNeighbors: 25,                // Optimal for 2D
     nEpochs: 300,
-    metric: DistanceMetric.Cosine, // HNSW-accelerated for massive speedup!
-    forceExactKnn: false           // Use HNSW optimization (default)
+    metric: DistanceMetric.Cosine, // HNSW-accelerated!
+    forceExactKnn: false           // Use HNSW optimization
 );
 
-// Access comprehensive model information
-var info = model.ModelInfo;
-Console.WriteLine($"Model: {info.TrainingSamples} samples, " +
-                 $"{info.InputDimension}D → {info.OutputDimension}D, " +
-                 $"metric: {info.MetricName}");
+// Save and load models with spread parameter preserved
+model.Save("model_with_spread.umap");
+using var loadedModel = UMapModel.Load("model_with_spread.umap");
 
-// Save and load models (unique to this implementation)
-model.Save("enhanced_model.umap");
-using var loadedModel = UMapModel.Load("enhanced_model.umap");
-
-// Transform new data using saved model
+// Transform maintains original spread behavior
 var newEmbedding = loadedModel.Transform(newData);
 ```
 
 ## Prebuilt Binaries Available
 
-**Ready-to-use enhanced native libraries are included for immediate deployment:**
+**v3.1.1 Enhanced Binaries with Spread Parameter Support:**
 
-- **Windows x64**: `uwot.dll` - Enhanced version with multi-metric support and progress reporting
-- **Linux x64**: `libuwot.so` - Complete feature parity with Windows version
+- **Windows x64**: `uwot.dll` (179KB) - Complete HNSW + spread parameter implementation
+- **Linux x64**: `libuwot.so` (211KB) - Full feature parity with spread optimization
 
-These prebuilt binaries provide:
-- **All enhanced features**: Multi-dimensional support, multiple metrics, progress reporting
-- **Production stability**: Thoroughly tested across multiple environments
-- **Optimized performance**: Compiled with release optimizations and OpenMP support
-- **Immediate deployment**: No compilation required - works out of the box
-- **Cross-platform compatibility**: Automatic runtime detection selects the correct native library
+**Features**: Multi-dimensional support, smart spread defaults, HNSW optimization, progress reporting, and cross-platform compatibility. Ready for immediate deployment.
 
 
 ### UMAP Advantages
@@ -219,7 +192,6 @@ Currently available UMAP libraries for C# (including popular NuGet packages) hav
 - **No model persistence**: Cannot save trained models for later use
 - **No true transform capability**: Cannot embed new data points using pre-trained models
 - **Limited dimensionality**: Usually restricted to 2D or 3D embeddings only
-- **Limited dimensionality**: Usually restricted to 2D or 3D embeddings only
 - **Single distance metric**: Only Euclidean distance supported
 - **No progress feedback**: No way to monitor training progress
 - **Performance issues**: Often slower implementations without the optimizations of uwot
@@ -229,12 +201,12 @@ This enhanced implementation addresses ALL these gaps by providing:
 
 - **True model persistence**: Save and load trained UMAP models in efficient binary format
 - **Authentic transform functionality**: Embed new data using existing models (essential for production ML pipelines)
-- **Authentic transform functionality**: Embed new data using existing models (essential for production ML pipelines)
+- **Smart spread parameter (NEW v3.1.1)**: Dimension-aware defaults for optimal embeddings
 - **Arbitrary dimensions**: Support for 1D to 50D embeddings including specialized dimensions like 27D
 - **Multiple distance metrics**: Five different metrics optimized for different data types
+- **HNSW optimization**: 50-2000x faster with 80-85% memory reduction
 - **Real-time progress reporting**: Live feedback during training with customizable callbacks
-- **High performance**: Based on the optimized uwot implementation used in production R environments
-- **Complete parameter support**: Full access to UMAP's hyperparameters and options
+- **Complete parameter support**: Full access to UMAP's hyperparameters including spread
 
 ## Enhanced Use Cases
 

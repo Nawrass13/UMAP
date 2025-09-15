@@ -1,7 +1,7 @@
 # Enhanced UMAP API Documentation
 
 ## Overview
-Complete API documentation for the Enhanced UMAP implementation with revolutionary HNSW k-NN optimization. This document covers both C++ and C# APIs with comprehensive examples and best practices.
+Complete API documentation for the Enhanced UMAP implementation with revolutionary HNSW k-NN optimization and smart spread parameter support. This document covers both C++ and C# APIs with comprehensive examples and best practices.
 
 ## 🚀 New HNSW Optimization Features
 
@@ -32,40 +32,54 @@ using var model = new UMapModel();
 
 ### Training Methods
 
-#### Fit() - Standard Training
+#### Fit() - Standard Training with Spread Parameter
 ```csharp
 public float[,] Fit(float[,] data,
                     int embeddingDimension = 2,
-                    int nNeighbors = 15,
-                    float minDist = 0.1f,
+                    int? nNeighbors = null,
+                    float? minDist = null,
+                    float? spread = null,        // NEW in v3.1.1
                     int nEpochs = 300,
                     DistanceMetric metric = DistanceMetric.Euclidean,
                     bool forceExactKnn = false)
 ```
 
-**New Parameter:**
-- `forceExactKnn`: **NEW** - Force exact brute-force k-NN instead of HNSW optimization
+**New Parameters:**
+- `spread`: **NEW v3.1.1** - Global scale of embedding (auto-optimized by dimension)
+- `forceExactKnn`: Force exact brute-force k-NN instead of HNSW optimization
 
-**Example:**
+**Smart Defaults by Dimension:**
+- **2D**: spread=5.0, minDist=0.35, nNeighbors=25 (optimal for visualization)
+- **10D**: spread=2.0, minDist=0.15, nNeighbors=15 (balanced)
+- **24D+**: spread=1.0, minDist=0.1, nNeighbors=15 (compact for ML pipelines)
+
+**Examples:**
 ```csharp
-// HNSW optimized training (default, recommended)
-var embedding = model.Fit(data,
-    embeddingDimension: 27,
+// Smart automatic defaults (recommended)
+var embedding2D = model.Fit(data, embeddingDimension: 2);  // Auto: spread=5.0
+var embedding27D = model.Fit(data, embeddingDimension: 27); // Auto: spread=1.0
+
+// Manual spread control for fine-tuning
+var customEmbedding = model.Fit(data,
+    embeddingDimension: 2,
+    spread: 5.0f,           // t-SNE-like space-filling
+    minDist: 0.35f,         // Minimum point separation
+    nNeighbors: 25,         // Optimal neighborhood size
     metric: DistanceMetric.Cosine,
     forceExactKnn: false);  // Use HNSW for massive speedup
 
-// Force exact computation (for validation or small datasets)
-var exactEmbedding = model.Fit(data,
-    forceExactKnn: true);   // Traditional brute-force method
+// Force exact computation (for validation)
+var exactEmbedding = model.Fit(data, forceExactKnn: true);
 ```
 
-#### FitWithProgress() - Training with Progress Reporting
+#### FitWithProgress() - Training with Progress Reporting and Spread Parameter
 ```csharp
 public float[,] FitWithProgress(float[,] data,
                                ProgressCallback progressCallback,
                                int embeddingDimension = 2,
-                               int nNeighbors = 15,
-                               float minDist = 0.1f,
+                               int? nNeighbors = null,
+                               float? minDist = null,
+                               float? spread = null,        // NEW v3.1.1
                                int nEpochs = 300,
                                DistanceMetric metric = DistanceMetric.Euclidean,
                                bool forceExactKnn = false)

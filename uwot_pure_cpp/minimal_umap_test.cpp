@@ -98,6 +98,7 @@ int main() {
     const int n_neighbors = 15;
     const int n_epochs = 200;
     const float min_dist = 0.1f;
+    const float spread = 1.0f;
 
     std::cout << "Generating test data: " << n_samples << " samples, "
         << n_features << " features" << std::endl;
@@ -142,8 +143,8 @@ int main() {
 
     // Call fit function
     std::cout << "Running UMAP fit with " << n_epochs << " epochs..." << std::endl;
-    int result = uwot_fit(model, flat_data.data(), n_samples, n_features,
-        n_neighbors, min_dist, n_epochs, embedding.data());
+    int result = uwot_fit(model, flat_data.data(), n_samples, n_features, 2,
+        n_neighbors, min_dist, spread, n_epochs, UWOT_METRIC_EUCLIDEAN, embedding.data(), 0);
 
     if (result == UWOT_SUCCESS) {
         std::cout << "UMAP fitting completed successfully!" << std::endl;
@@ -173,11 +174,59 @@ int main() {
         std::cout << "Embedding bounds: X=[" << min_x << ", " << max_x
             << "], Y=[" << min_y << ", " << max_y << "]" << std::endl;
 
+        float spread_score = std::sqrt((max_x - min_x) * (max_x - min_x) + (max_y - min_y) * (max_y - min_y));
+        std::cout << "Spread score (diagonal): " << spread_score << std::endl;
+
     }
     else {
         std::cout << "UMAP fitting failed with error code: " << result << std::endl;
         std::cout << "Error message: " << uwot_get_error_message(result) << std::endl;
     }
+
+    // NEW: Test spread parameter functionality
+    std::cout << "\n=== Testing Spread Parameter (NEW in v3.1.1) ===" << std::endl;
+
+    const std::vector<float> test_spreads = {0.5f, 1.0f, 2.0f, 5.0f};
+
+    for (float test_spread : test_spreads) {
+        std::cout << "\nTesting spread = " << test_spread << std::endl;
+
+        UwotModel* spread_model = uwot_create();
+        std::vector<float> spread_embedding(n_samples * 2);
+
+        int spread_result = uwot_fit(spread_model, flat_data.data(), n_samples, n_features, 2,
+            n_neighbors, 0.35f, test_spread, 100, UWOT_METRIC_EUCLIDEAN, spread_embedding.data(), 0);
+
+        if (spread_result == UWOT_SUCCESS) {
+            // Calculate spread metrics
+            float spread_min_x = spread_embedding[0], spread_max_x = spread_embedding[0];
+            float spread_min_y = spread_embedding[1], spread_max_y = spread_embedding[1];
+
+            for (int i = 0; i < n_samples; ++i) {
+                float x = spread_embedding[i * 2];
+                float y = spread_embedding[i * 2 + 1];
+                spread_min_x = std::min(spread_min_x, x);
+                spread_max_x = std::max(spread_max_x, x);
+                spread_min_y = std::min(spread_min_y, y);
+                spread_max_y = std::max(spread_max_y, y);
+            }
+
+            float diagonal = std::sqrt((spread_max_x - spread_min_x) * (spread_max_x - spread_min_x) +
+                                      (spread_max_y - spread_min_y) * (spread_max_y - spread_min_y));
+
+            std::cout << "  Bounds: X=[" << spread_min_x << ", " << spread_max_x
+                     << "], Y=[" << spread_min_y << ", " << spread_max_y << "]" << std::endl;
+            std::cout << "  Diagonal length: " << diagonal << " (spread effect: "
+                     << (diagonal / test_spread) << ")" << std::endl;
+        } else {
+            std::cout << "  Failed with error: " << spread_result << std::endl;
+        }
+
+        uwot_destroy(spread_model);
+    }
+
+    std::cout << "\n✓ Spread parameter testing completed!" << std::endl;
+    std::cout << "Higher spread values should produce more dispersed embeddings." << std::endl;
 
     // Test utility functions
     std::cout << "Model info - Vertices: " << uwot_get_n_vertices(model)

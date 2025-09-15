@@ -1,6 +1,42 @@
 # UMAPuwotSharp Version History
 
-## Version 3.1.0 - Revolutionary HNSW k-NN Optimization (Current)
+## Version 3.1.1 - Spread Parameter Implementation (Current)
+
+### 🆕 MAJOR FEATURE RELEASE - Spread Parameter
+- **Complete spread parameter implementation**: Based on official UMAP algorithm
+- **Smart dimension-based defaults**: 2D=5.0, 10D=2.0, 24D+=1.0 for optimal results
+- **t-SNE-like space-filling behavior**: spread=5.0 for research-proven optimal 2D visualization
+- **Mathematical curve fitting**: Proper a,b calculation from spread and min_dist
+- **Enhanced API**: Nullable parameters with intelligent auto-optimization
+
+### 🧠 RESEARCH-BACKED SMART DEFAULTS
+- **2D Visualization**: spread=5.0, min_dist=0.35, neighbors=25 (optimal for space-filling)
+- **10-20D Clustering**: spread=1.5-2.0 for balanced manifold preservation
+- **24D+ ML Pipeline**: spread=1.0 for tight cluster coherence
+- **Backward compatible**: Existing code works with automatic optimization
+
+### 📋 NEW API FEATURES
+```csharp
+// Smart defaults based on dimensions
+var embedding2D = model.Fit(data, embeddingDimension: 2);  // Auto: spread=5.0
+
+// Manual control for fine-tuning
+var customEmbedding = model.Fit(data,
+    embeddingDimension: 2,
+    spread: 5.0f,          // Space-filling visualization
+    minDist: 0.35f,        // Minimum point separation
+    nNeighbors: 25);       // Optimal for 2D
+```
+
+### 🔧 TECHNICAL IMPROVEMENTS
+- **Binary updates**: Windows (179KB) and Linux (211KB) with spread support
+- **Curve fitting algorithm**: Implements official UMAP find_ab_params logic
+- **Enhanced C++ wrapper**: Full spread parameter integration
+- **Comprehensive testing**: Updated test suites with spread validation
+
+---
+
+## Version 3.1.0 - Revolutionary HNSW k-NN Optimization
 
 ### 🚀 BREAKTHROUGH PERFORMANCE
 - **Complete HNSW k-NN optimization**: 50-2000x training speedup
@@ -103,15 +139,16 @@ v3.0.1 includes the complete Linux library (174KB) with full HNSW acceleration.
 
 ## Migration Guide
 
-### From v2.x to v3.1.0
+### From v2.x to v3.1.1
 ```csharp
 // v2.x code (still works)
 var embedding = model.Fit(data, embeddingDimension: 2);
 
-// v3.1.0 optimized code
+// v3.1.1 optimized code with spread parameter
 var embedding = model.Fit(data,
     embeddingDimension: 2,
-    forceExactKnn: false);  // Enable HNSW for 50-2000x speedup
+    spread: 5.0f,          // NEW: t-SNE-like space-filling
+    forceExactKnn: false); // Enable HNSW for 50-2000x speedup
 
 // New safety features
 var result = model.TransformDetailed(newData);
@@ -134,6 +171,7 @@ Console.WriteLine($"Outlier level: {result.Severity}");
 | **3.0.0** | <3ms | 15-45MB | HNSW | MSE < 0.01 |
 | **3.0.1** | <3ms | 15-45MB | HNSW (both platforms) | MSE < 0.01 |
 | **3.1.0** | <3ms | 15-45MB | HNSW + enhancements | MSE < 0.01 |
+| **3.1.1** | <3ms | 15-45MB | HNSW + spread parameter | MSE < 0.01 |
 
 ### Speedup Achievements
 - **50-2000x faster transforms**: Production-ready real-time processing

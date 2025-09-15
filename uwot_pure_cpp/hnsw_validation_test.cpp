@@ -102,7 +102,7 @@ bool test_hnsw_vs_exact_accuracy() {
     auto hnsw_start = std::chrono::high_resolution_clock::now();
 
     int result = uwot_fit_with_enhanced_progress(hnsw_model, data.data(), n_obs, n_dim,
-                                               embedding_dim, n_neighbors, 0.1f, n_epochs,
+                                               embedding_dim, n_neighbors, 0.1f, 1.0f, n_epochs,
                                                UWOT_METRIC_EUCLIDEAN, hnsw_embedding.data(),
                                                validation_progress_callback_v2, 0); // force_exact = 0 (HNSW)
 
@@ -130,7 +130,7 @@ bool test_hnsw_vs_exact_accuracy() {
     auto exact_start = std::chrono::high_resolution_clock::now();
 
     result = uwot_fit_with_enhanced_progress(exact_model, data.data(), n_obs, n_dim,
-                                           embedding_dim, n_neighbors, 0.1f, n_epochs,
+                                           embedding_dim, n_neighbors, 0.1f, 1.0f, n_epochs,
                                            UWOT_METRIC_EUCLIDEAN, exact_embedding.data(),
                                            validation_progress_callback_v2, 1); // force_exact = 1
 
@@ -204,7 +204,7 @@ bool test_multi_metric_support() {
         auto start_time = std::chrono::high_resolution_clock::now();
 
         int result = uwot_fit_with_enhanced_progress(model, data.data(), n_obs, n_dim,
-                                                   embedding_dim, 15, 0.1f, 50,
+                                                   embedding_dim, 15, 0.1f, 1.0f, 50,
                                                    metric, embedding.data(),
                                                    validation_progress_callback_v2, 0);
 
@@ -241,7 +241,7 @@ bool test_multi_metric_support() {
 
         // Should work but use exact computation with warnings
         int result = uwot_fit_with_enhanced_progress(model, data.data(), n_obs, n_dim,
-                                                   embedding_dim, 15, 0.1f, 30,
+                                                   embedding_dim, 15, 0.1f, 1.0f, 30,
                                                    metric, embedding.data(),
                                                    validation_progress_callback_v2, 0);
 
@@ -279,7 +279,7 @@ bool test_memory_and_persistence() {
 
     printf("Training model for persistence test...\n");
     int result = uwot_fit_with_enhanced_progress(model, data.data(), n_obs, n_dim,
-                                               embedding_dim, 15, 0.1f, 50,
+                                               embedding_dim, 15, 0.1f, 1.0f, 50,
                                                UWOT_METRIC_EUCLIDEAN, embedding.data(),
                                                validation_progress_callback_v2, 0);
 

@@ -46,9 +46,9 @@ bool test_progress_reporting() {
 
     printf("Testing uwot_fit_with_progress...\n");
     int result = uwot_fit_with_progress(model, data.data(), n_obs, n_dim,
-        embedding_dim, 15, 0.1f, n_epochs,
+        embedding_dim, 15, 0.1f, 1.0f, n_epochs,
         UWOT_METRIC_EUCLIDEAN, embedding.data(),
-        test_progress_callback);
+        test_progress_callback, 0);
 
     if (result != UWOT_SUCCESS) {
         printf("Progress test failed with error: %s\n", uwot_get_error_message(result));
@@ -87,8 +87,8 @@ bool test_basic_functionality() {
 
     printf("Testing basic uwot_fit...\n");
     int result = uwot_fit(model, data.data(), n_obs, n_dim,
-        embedding_dim, 15, 0.1f, 100,
-        UWOT_METRIC_EUCLIDEAN, embedding.data());
+        embedding_dim, 15, 0.1f, 1.0f, 100,
+        UWOT_METRIC_EUCLIDEAN, embedding.data(), 0);
 
     if (result != UWOT_SUCCESS) {
         printf("Basic test failed with error: %s\n", uwot_get_error_message(result));
@@ -146,8 +146,8 @@ bool test_27d_embedding() {
 
     printf("Testing 27D embedding with cosine distance...\n");
     int result = uwot_fit(model, data.data(), n_obs, n_dim,
-        embedding_dim, 15, 0.1f, 50,
-        UWOT_METRIC_COSINE, embedding.data());
+        embedding_dim, 15, 0.1f, 1.0f, 50,
+        UWOT_METRIC_COSINE, embedding.data(), 0);
 
     if (result != UWOT_SUCCESS) {
         printf("27D test failed with error: %s\n", uwot_get_error_message(result));
@@ -197,8 +197,8 @@ bool test_distance_metrics() {
         std::vector<float> embedding(n_obs * embedding_dim);
 
         int result = uwot_fit(model, data.data(), n_obs, n_dim,
-            embedding_dim, 10, 0.1f, 30,
-            metric, embedding.data());
+            embedding_dim, 10, 0.1f, 1.0f, 30,
+            metric, embedding.data(), 0);
 
         if (result != UWOT_SUCCESS) {
             printf("%s metric test failed with error: %s\n",
@@ -242,8 +242,8 @@ bool test_model_persistence() {
 
     printf("Training model for persistence test...\n");
     int result = uwot_fit(model, train_data.data(), n_obs, n_dim,
-        embedding_dim, 15, 0.1f, 50,
-        UWOT_METRIC_EUCLIDEAN, train_embedding.data());
+        embedding_dim, 15, 0.1f, 1.0f, 50,
+        UWOT_METRIC_EUCLIDEAN, train_embedding.data(), 0);
 
     if (result != UWOT_SUCCESS) {
         printf("Training failed with error: %s\n", uwot_get_error_message(result));
@@ -346,8 +346,8 @@ bool test_hnsw_enhanced_transform() {
 
     printf("Training model with HNSW optimization...\n");
     int result = uwot_fit(model, train_data.data(), n_obs, n_dim,
-        embedding_dim, n_neighbors, 0.1f, 100,
-        UWOT_METRIC_EUCLIDEAN, train_embedding.data());
+        embedding_dim, n_neighbors, 0.1f, 1.0f, 100,
+        UWOT_METRIC_EUCLIDEAN, train_embedding.data(), 0);
 
     if (result != UWOT_SUCCESS) {
         printf("HNSW training failed with error: %s\n", uwot_get_error_message(result));
@@ -455,8 +455,8 @@ bool test_performance_comparison() {
     auto start_time = std::chrono::high_resolution_clock::now();
 
     int result = uwot_fit(model, train_data.data(), n_obs, n_dim,
-        embedding_dim, 15, 0.1f, 100,
-        UWOT_METRIC_EUCLIDEAN, train_embedding.data());
+        embedding_dim, 15, 0.1f, 1.0f, 100,
+        UWOT_METRIC_EUCLIDEAN, train_embedding.data(), 0);
 
     auto end_time = std::chrono::high_resolution_clock::now();
     auto training_duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);

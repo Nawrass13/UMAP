@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find:*)",
+      "Bash(grep:*)",
+      "Bash(dotnet build:*)",
+      "Bash(7z:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

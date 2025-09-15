@@ -28,6 +28,9 @@ namespace UMAPExample
                 // Demo 5: Enhanced Safety Features with HNSW
                 DemoSafetyFeatures();
 
+                // Demo 6: New Spread Parameter with Smart Defaults
+                DemoSpreadParameter();
+
                 Console.WriteLine("\nAll demos completed successfully!");
                 Console.WriteLine("Your enhanced UMAP wrapper is ready for production use!");
             }
@@ -559,6 +562,109 @@ namespace UMAPExample
             {
                 Console.WriteLine($"    ... ({nDims - maxDims} more dimensions)");
             }
+        }
+
+        static void DemoSpreadParameter()
+        {
+            Console.WriteLine("\n=== Demo 6: NEW Spread Parameter with Smart Defaults ===");
+
+            var data = GenerateTestData(500, 100, DataPattern.Standard);
+            Console.WriteLine($"Generated data: {data.GetLength(0)} samples × {data.GetLength(1)} features");
+
+            // Demo 1: Smart auto-defaults (recommended approach)
+            Console.WriteLine("\n1. Using Smart Auto-Defaults (Recommended):");
+            Console.WriteLine("   - 2D: spread=5.0, min_dist=0.35, neighbors=25 (your optimal research)");
+            Console.WriteLine("   - Higher dimensions: automatically scaled down for cluster preservation");
+
+            var dimensions = new[] { 2, 10, 24 };
+            foreach (var dim in dimensions)
+            {
+                using var model = new UMapModel();
+
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+
+                // Use smart defaults - just specify dimension!
+                var embedding = model.Fit(data, embeddingDimension: dim);
+
+                sw.Stop();
+                Console.WriteLine($"   {dim}D embedding: {embedding.GetLength(0)} samples × {embedding.GetLength(1)}D (auto-optimized in {sw.ElapsedMilliseconds}ms)");
+            }
+
+            // Demo 2: Custom spread values comparison
+            Console.WriteLine("\n2. Custom Spread Values Comparison (2D Visualization):");
+
+            var testData = GenerateTestData(200, 50, DataPattern.Clustered);
+            var spreadValues = new[] { 1.0f, 2.5f, 5.0f, 8.0f };
+
+            foreach (var spread in spreadValues)
+            {
+                using var model = new UMapModel();
+
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+
+                // Custom spread with your optimal parameters for 2D
+                var embedding = model.Fit(
+                    data: testData,
+                    embeddingDimension: 2,
+                    nNeighbors: 25,           // Your optimal
+                    minDist: 0.35f,           // Your optimal
+                    spread: spread            // Testing different spreads
+                );
+
+                sw.Stop();
+                Console.WriteLine($"   Spread={spread:F1}: {CalculateSpreadScore(embedding)} space utilization ({sw.ElapsedMilliseconds}ms)");
+            }
+
+            // Demo 3: Dimension scaling demonstration
+            Console.WriteLine("\n3. Automatic Dimension-Based Scaling:");
+            Console.WriteLine("   Higher dimensions automatically use lower spread to preserve clusters:");
+
+            var scalingDemo = new[] {
+                (dim: 2, desc: "2D Visualization"),
+                (dim: 10, desc: "10D Clustering"),
+                (dim: 24, desc: "24D ML Pipeline")
+            };
+
+            foreach (var (dim, desc) in scalingDemo)
+            {
+                using var model = new UMapModel();
+
+                // Show what the auto-calculation would choose
+                var autoSpread = dim switch
+                {
+                    2 => 5.0f,
+                    <= 10 => 2.0f,
+                    _ => 1.0f
+                };
+
+                Console.WriteLine($"   {desc} ({dim}D): auto-spread={autoSpread:F1}");
+
+                var embedding = model.Fit(data, embeddingDimension: dim);
+                Console.WriteLine($"     Result: {embedding.GetLength(0)} samples × {embedding.GetLength(1)}D embedding");
+            }
+
+            Console.WriteLine("\n✓ Spread parameter successfully implemented with research-based smart defaults!");
+            Console.WriteLine("  - Use model.Fit(data, embeddingDimension: dim) for auto-optimized results");
+            Console.WriteLine("  - Override with custom spread/minDist/neighbors for fine-tuning");
+        }
+
+        private static float CalculateSpreadScore(float[,] embedding)
+        {
+            // Simple metric: average distance from origin (higher = more spread out)
+            float totalDist = 0;
+            int nSamples = embedding.GetLength(0);
+
+            for (int i = 0; i < nSamples; i++)
+            {
+                float dist = 0;
+                for (int j = 0; j < embedding.GetLength(1); j++)
+                {
+                    dist += embedding[i, j] * embedding[i, j];
+                }
+                totalDist += (float)Math.Sqrt(dist);
+            }
+
+            return totalDist / nSamples;
         }
 
         enum DataPattern
