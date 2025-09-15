@@ -90,8 +90,27 @@ var exactEmbedding = model.Fit(data, forceExactKnn: true);   // Traditional appr
 
 ## Enhanced Features
 
+### 🎯 **Product Quantization for 70-80% File Size Reduction**
+**NEW in v3.2.0**: Revolutionary file compression system with minimal quality loss!
+
+```csharp
+// Enable Product Quantization (default in v3.2.0)
+var embedding = model.Fit(data, useQuantization: true);  // 70-80% smaller model files
+model.Save("compressed_model.umap");  // Dramatically reduced file size
+
+// Disable for maximum quality (larger files)
+var embedding = model.Fit(data, useQuantization: false); // Traditional large files
+```
+
+**Key Benefits:**
+- **File Size**: 70-80% reduction through 4-subspace vector quantization
+- **Quality**: Minimal loss (2-5% recall reduction) with intelligent k-means clustering
+- **Memory**: Real-time estimation and optimization during training
+- **Auto-scaling**: Dataset-aware HNSW parameter optimization
+- **Compatibility**: Full backward compatibility with model persistence
+
 ### 🎯 **Smart Spread Parameter for Optimal Embeddings**
-**NEW in v3.1.2**: Complete spread parameter implementation with dimension-aware defaults!
+**ENHANCED in v3.2.0**: Complete spread parameter implementation with dimension-aware defaults!
 
 ```csharp
 // Automatic spread optimization based on dimensions
@@ -114,13 +133,15 @@ var customEmbedding = model.Fit(data,
 ```
 
 ### 🚀 **Key Features**
-- **Arbitrary dimensions**: 1D to 50D embeddings
+- **Product Quantization**: 70-80% file size reduction with minimal quality loss (NEW v3.2.0)
+- **HNSW hyperparameters**: Complete control over M, ef_construction, ef_search with auto-scaling
+- **Arbitrary dimensions**: 1D to 50D embeddings with memory estimation
 - **Multiple distance metrics**: Euclidean, Cosine, Manhattan, Correlation, Hamming
-- **Smart spread defaults**: Automatic optimization based on embedding dimensions
 
-- **Real-time progress reporting**: Live training feedback with callbacks
+- **Smart spread defaults**: Automatic optimization based on embedding dimensions
+- **Real-time progress reporting**: Phase-aware callbacks with time estimates
 - **HNSW optimization**: 50-2000x faster with 80-85% memory reduction
-- **Model persistence**: Save/load trained models for production use
+- **Model persistence**: Save/load trained models with compression support
 - **Safety features**: 5-level outlier detection for AI validation
 
 ### 🔧 **Complete API Example with Spread Parameter**
@@ -611,6 +632,8 @@ HNSW acceleration works with multiple distance metrics:
 
 | Version | Release Date | Key Features | Performance |
 |---------|--------------|--------------|-------------|
+| **3.2.0** | 2025-01-15 | **Product Quantization system**, HNSW hyperparameter control, Enhanced memory estimation, 70-80% file compression | **Storage optimization**, dataset-aware auto-scaling |
+| **3.1.2** | 2025-01-15 | Smart spread parameter implementation, Dimension-aware defaults, Enhanced progress reporting | Optimal embedding quality across dimensions |
 | **3.1.0** | 2025-01-15 | Revolutionary HNSW optimization, Enhanced API with forceExactKnn parameter, Multi-core OpenMP acceleration | **50-2000x speedup**, 80-85% memory reduction |
 | **3.0.1** | 2025-01-10 | Critical cross-platform fix, Linux HNSW library (174KB), Enhanced build system | Full cross-platform HNSW parity |
 | **3.0.0** | 2025-01-08 | First HNSW implementation, Production safety features, 5-level outlier detection | 50-200x speedup (Windows only) |

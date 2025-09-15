@@ -433,9 +433,11 @@ dotnet pack UMAPuwotSharp/UMAPuwotSharp.csproj
 
 ## Git Commit Guidelines
 - Keep commit messages clean and professional
-- NEVER add Claude AI attribution or AI-generated footers to commits
+- **NEVER add Claude AI attribution or AI-generated footers to commits**
+- **NEVER add "🤖 Generated with [Claude Code]" or "Co-Authored-By: Claude" to any commits**
 - Focus on technical changes and their impact
 - Use conventional commit format when appropriate
+- Professional commit messages only - no AI references
 
 ## Key Learnings from HNSW Implementation
 

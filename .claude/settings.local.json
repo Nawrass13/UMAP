@@ -15,7 +15,8 @@
       "Bash(./BuildDockerLinuxWindows.bat)",
       "Bash(docker build:*)",
       "Bash(dotnet run:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git push:*)"
     ],
     "deny": [],
     "ask": []
