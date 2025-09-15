@@ -172,12 +172,14 @@ namespace UMAPuwotSharp
     }
 
     /// <summary>
-    /// Progress callback delegate for training progress reporting
+    /// Enhanced progress callback delegate for training progress reporting with phase information and loss values
     /// </summary>
-    /// <param name="epoch">Current epoch number</param>
-    /// <param name="totalEpochs">Total number of epochs</param>
+    /// <param name="phase">Current phase (e.g., "Normalizing", "Building HNSW", "Training Epoch")</param>
+    /// <param name="current">Current progress counter (e.g., current epoch)</param>
+    /// <param name="total">Total items to process (e.g., total epochs)</param>
     /// <param name="percent">Progress percentage (0-100)</param>
-    public delegate void ProgressCallback(int epoch, int totalEpochs, float percent);
+    /// <param name="message">Additional information like loss values, time estimates, or warnings</param>
+    public delegate void ProgressCallback(string phase, int current, int total, float percent, string? message);
 
     /// <summary>
     /// Enhanced cross-platform C# wrapper for UMAP dimensionality reduction
@@ -198,8 +200,14 @@ namespace UMAPuwotSharp
         private const string WindowsDll = "uwot.dll";
         private const string LinuxDll = "libuwot.so";
 
-        // Native progress callback delegate
-        private delegate void NativeProgressCallback(int epoch, int totalEpochs, float percent);
+        // Enhanced native progress callback delegate with phase information and loss values
+        private delegate void NativeProgressCallbackV2(
+            [MarshalAs(UnmanagedType.LPStr)] string phase,
+            int current,
+            int total,
+            float percent,
+            [MarshalAs(UnmanagedType.LPStr)] string message
+        );
 
         // Windows P/Invoke declarations
         [DllImport(WindowsDll, CallingConvention = CallingConvention.Cdecl, EntryPoint = "uwot_create")]
@@ -208,8 +216,8 @@ namespace UMAPuwotSharp
         [DllImport(WindowsDll, CallingConvention = CallingConvention.Cdecl, EntryPoint = "uwot_fit")]
         private static extern int WindowsFit(IntPtr model, float[] data, int nObs, int nDim, int embeddingDim, int nNeighbors, float minDist, float spread, int nEpochs, DistanceMetric metric, float[] embedding, int forceExactKnn);
 
-        [DllImport(WindowsDll, CallingConvention = CallingConvention.Cdecl, EntryPoint = "uwot_fit_with_progress")]
-        private static extern int WindowsFitWithProgress(IntPtr model, float[] data, int nObs, int nDim, int embeddingDim, int nNeighbors, float minDist, float spread, int nEpochs, DistanceMetric metric, float[] embedding, NativeProgressCallback progressCallback, int forceExactKnn, int useQuantization, int M, int efConstruction, int efSearch);
+        [DllImport(WindowsDll, CallingConvention = CallingConvention.Cdecl, EntryPoint = "uwot_fit_with_progress_v2")]
+        private static extern int WindowsFitWithProgressV2(IntPtr model, float[] data, int nObs, int nDim, int embeddingDim, int nNeighbors, float minDist, float spread, int nEpochs, DistanceMetric metric, float[] embedding, NativeProgressCallbackV2 progressCallback, int forceExactKnn, int useQuantization, int M, int efConstruction, int efSearch, int pqSubspaces);
 
         [DllImport(WindowsDll, CallingConvention = CallingConvention.Cdecl, EntryPoint = "uwot_transform")]
         private static extern int WindowsTransform(IntPtr model, float[] newData, int nNewObs, int nDim, float[] embedding);
@@ -238,6 +246,12 @@ namespace UMAPuwotSharp
         [DllImport(WindowsDll, CallingConvention = CallingConvention.Cdecl, EntryPoint = "uwot_get_metric_name")]
         private static extern IntPtr WindowsGetMetricName(DistanceMetric metric);
 
+        [DllImport(WindowsDll, CallingConvention = CallingConvention.Cdecl, EntryPoint = "uwot_set_global_callback")]
+        private static extern void WindowsSetGlobalCallback(NativeProgressCallbackV2 callback);
+
+        [DllImport(WindowsDll, CallingConvention = CallingConvention.Cdecl, EntryPoint = "uwot_clear_global_callback")]
+        private static extern void WindowsClearGlobalCallback();
+
         // Linux P/Invoke declarations
         [DllImport(LinuxDll, CallingConvention = CallingConvention.Cdecl, EntryPoint = "uwot_create")]
         private static extern IntPtr LinuxCreate();
@@ -245,8 +259,8 @@ namespace UMAPuwotSharp
         [DllImport(LinuxDll, CallingConvention = CallingConvention.Cdecl, EntryPoint = "uwot_fit")]
         private static extern int LinuxFit(IntPtr model, float[] data, int nObs, int nDim, int embeddingDim, int nNeighbors, float minDist, float spread, int nEpochs, DistanceMetric metric, float[] embedding, int forceExactKnn);
 
-        [DllImport(LinuxDll, CallingConvention = CallingConvention.Cdecl, EntryPoint = "uwot_fit_with_progress")]
-        private static extern int LinuxFitWithProgress(IntPtr model, float[] data, int nObs, int nDim, int embeddingDim, int nNeighbors, float minDist, float spread, int nEpochs, DistanceMetric metric, float[] embedding, NativeProgressCallback progressCallback, int forceExactKnn, int useQuantization, int M, int efConstruction, int efSearch);
+        [DllImport(LinuxDll, CallingConvention = CallingConvention.Cdecl, EntryPoint = "uwot_fit_with_progress_v2")]
+        private static extern int LinuxFitWithProgressV2(IntPtr model, float[] data, int nObs, int nDim, int embeddingDim, int nNeighbors, float minDist, float spread, int nEpochs, DistanceMetric metric, float[] embedding, NativeProgressCallbackV2 progressCallback, int forceExactKnn, int useQuantization, int M, int efConstruction, int efSearch, int pqSubspaces);
 
         [DllImport(LinuxDll, CallingConvention = CallingConvention.Cdecl, EntryPoint = "uwot_transform")]
         private static extern int LinuxTransform(IntPtr model, float[] newData, int nNewObs, int nDim, float[] embedding);
@@ -274,6 +288,12 @@ namespace UMAPuwotSharp
 
         [DllImport(LinuxDll, CallingConvention = CallingConvention.Cdecl, EntryPoint = "uwot_get_metric_name")]
         private static extern IntPtr LinuxGetMetricName(DistanceMetric metric);
+
+        [DllImport(LinuxDll, CallingConvention = CallingConvention.Cdecl, EntryPoint = "uwot_set_global_callback")]
+        private static extern void LinuxSetGlobalCallback(NativeProgressCallbackV2 callback);
+
+        [DllImport(LinuxDll, CallingConvention = CallingConvention.Cdecl, EntryPoint = "uwot_clear_global_callback")]
+        private static extern void LinuxClearGlobalCallback();
 
         #endregion
 
@@ -456,7 +476,7 @@ namespace UMAPuwotSharp
             float actualMinDist = minDist ?? CalculateOptimalMinDist(embeddingDimension);
             float actualSpread = spread ?? CalculateOptimalSpread(embeddingDimension);
 
-            return FitInternal(data, embeddingDimension, actualNeighbors, actualMinDist, actualSpread, nEpochs, metric, forceExactKnn, progressCallback: null);
+            return FitInternal(data, embeddingDimension, actualNeighbors, actualMinDist, actualSpread, nEpochs, metric, forceExactKnn, progressCallback: null, pqSubspaces: null);
         }
 
         /// <summary>
@@ -482,7 +502,8 @@ namespace UMAPuwotSharp
                                       float? spread = null,
                                       int nEpochs = 300,
                                       DistanceMetric metric = DistanceMetric.Euclidean,
-                                      bool forceExactKnn = false)
+                                      bool forceExactKnn = false,
+                                      int? pqSubspaces = null)
         {
             if (progressCallback == null)
                 throw new ArgumentNullException(nameof(progressCallback));
@@ -492,7 +513,7 @@ namespace UMAPuwotSharp
             float actualMinDist = minDist ?? CalculateOptimalMinDist(embeddingDimension);
             float actualSpread = spread ?? CalculateOptimalSpread(embeddingDimension);
 
-            return FitInternal(data, embeddingDimension, actualNeighbors, actualMinDist, actualSpread, nEpochs, metric, forceExactKnn, progressCallback);
+            return FitInternal(data, embeddingDimension, actualNeighbors, actualMinDist, actualSpread, nEpochs, metric, forceExactKnn, progressCallback, pqSubspaces);
         }
 
         /// <summary>
@@ -677,7 +698,8 @@ namespace UMAPuwotSharp
                                    int nEpochs,
                                    DistanceMetric metric,
                                    bool forceExactKnn,
-                                   ProgressCallback? progressCallback)
+                                   ProgressCallback? progressCallback,
+                                   int? pqSubspaces = null)
         {
             if (data == null)
                 throw new ArgumentNullException(nameof(data));
@@ -717,12 +739,12 @@ namespace UMAPuwotSharp
             int result;
             if (progressCallback != null)
             {
-                // Create native callback wrapper
-                NativeProgressCallback nativeCallback = (epoch, totalEpochs, percent) =>
+                // Create enhanced native callback wrapper
+                NativeProgressCallbackV2 nativeCallback = (phase, current, total, percent, message) =>
                 {
                     try
                     {
-                        progressCallback(epoch, totalEpochs, percent);
+                        progressCallback(phase ?? "Training", current, total, percent, message);
                     }
                     catch
                     {
@@ -730,7 +752,7 @@ namespace UMAPuwotSharp
                     }
                 };
 
-                result = CallFitWithProgress(_nativeModel, flatData, nSamples, nFeatures, embeddingDimension, nNeighbors, minDist, spread, nEpochs, metric, embedding, nativeCallback, forceExactKnn ? 1 : 0, 1, -1, -1, -1);
+                result = CallFitWithProgressV2(_nativeModel, flatData, nSamples, nFeatures, embeddingDimension, nNeighbors, minDist, spread, nEpochs, metric, embedding, nativeCallback, forceExactKnn ? 1 : 0, 1, -1, -1, -1, pqSubspaces ?? -1);
             }
             else
             {
@@ -761,10 +783,10 @@ namespace UMAPuwotSharp
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static int CallFitWithProgress(IntPtr model, float[] data, int nObs, int nDim, int embeddingDim, int nNeighbors, float minDist, float spread, int nEpochs, DistanceMetric metric, float[] embedding, NativeProgressCallback progressCallback, int forceExactKnn, int useQuantization, int M, int efConstruction, int efSearch)
+        private static int CallFitWithProgressV2(IntPtr model, float[] data, int nObs, int nDim, int embeddingDim, int nNeighbors, float minDist, float spread, int nEpochs, DistanceMetric metric, float[] embedding, NativeProgressCallbackV2 progressCallback, int forceExactKnn, int useQuantization, int M, int efConstruction, int efSearch, int pqSubspaces)
         {
-            return IsWindows ? WindowsFitWithProgress(model, data, nObs, nDim, embeddingDim, nNeighbors, minDist, spread, nEpochs, metric, embedding, progressCallback, forceExactKnn, useQuantization, M, efConstruction, efSearch)
-                             : LinuxFitWithProgress(model, data, nObs, nDim, embeddingDim, nNeighbors, minDist, spread, nEpochs, metric, embedding, progressCallback, forceExactKnn, useQuantization, M, efConstruction, efSearch);
+            return IsWindows ? WindowsFitWithProgressV2(model, data, nObs, nDim, embeddingDim, nNeighbors, minDist, spread, nEpochs, metric, embedding, progressCallback, forceExactKnn, useQuantization, M, efConstruction, efSearch, pqSubspaces)
+                             : LinuxFitWithProgressV2(model, data, nObs, nDim, embeddingDim, nNeighbors, minDist, spread, nEpochs, metric, embedding, progressCallback, forceExactKnn, useQuantization, M, efConstruction, efSearch, pqSubspaces);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -826,6 +848,20 @@ namespace UMAPuwotSharp
             return IsWindows ? WindowsGetMetricName(metric) : LinuxGetMetricName(metric);
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static void CallSetGlobalCallback(NativeProgressCallbackV2 callback)
+        {
+            if (IsWindows) WindowsSetGlobalCallback(callback);
+            else LinuxSetGlobalCallback(callback);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static void CallClearGlobalCallback()
+        {
+            if (IsWindows) WindowsClearGlobalCallback();
+            else LinuxClearGlobalCallback();
+        }
+
         #endregion
 
         #region Utility Methods
@@ -860,6 +896,53 @@ namespace UMAPuwotSharp
             }
             return result;
         }
+
+        #endregion
+
+        #region Global Callback Management
+
+        /// <summary>
+        /// Sets a global callback for all UMAP operations to receive warnings, errors, and status messages.
+        /// This callback will receive ALL warnings, errors, and status messages from any UMAP operation.
+        /// </summary>
+        /// <param name="callback">Enhanced progress callback that receives phase, progress, and message information</param>
+        public static void SetGlobalCallback(ProgressCallback callback)
+        {
+            if (callback != null)
+            {
+                var nativeCallback = new NativeProgressCallbackV2((phase, current, total, percent, message) =>
+                {
+                    try
+                    {
+                        callback(phase ?? "Unknown", current, total, percent, message);
+                    }
+                    catch
+                    {
+                        // Ignore exceptions in callback to prevent native crashes
+                    }
+                });
+
+                // Keep reference to prevent garbage collection
+                _globalCallback = nativeCallback;
+                CallSetGlobalCallback(nativeCallback);
+            }
+            else
+            {
+                CallClearGlobalCallback();
+                _globalCallback = null;
+            }
+        }
+
+        /// <summary>
+        /// Clears the global callback for UMAP operations
+        /// </summary>
+        public static void ClearGlobalCallback()
+        {
+            CallClearGlobalCallback();
+            _globalCallback = null;
+        }
+
+        private static NativeProgressCallbackV2? _globalCallback;
 
         #endregion
 
@@ -985,7 +1068,9 @@ namespace UMAPuwotSharp
         /// <returns>A formatted string describing all model parameters</returns>
         public override string ToString()
         {
-            return $"Enhanced UMAP Model: {TrainingSamples} samples, {InputDimension}D → {OutputDimension}D, k={Neighbors}, min_dist={MinimumDistance:F3}, spread={Spread:F3}, metric={MetricName}";
+            return $"Enhanced UMAP Model: {TrainingSamples} samples, {InputDimension}D → {OutputDimension}D, " +
+                   $"k={Neighbors}, min_dist={MinimumDistance:F3}, spread={Spread:F3}, metric={MetricName}, " +
+                   $"PQ={UseQuantization}, HNSW(M={HnswM}, ef_c={HnswEfConstruction}, ef_s={HnswEfSearch})";
         }
     }
 }

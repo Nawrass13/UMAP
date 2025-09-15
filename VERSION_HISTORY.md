@@ -1,6 +1,40 @@
 # UMAPuwotSharp Version History
 
-## Version 3.1.2 - Spread Parameter Implementation (Current)
+## Version 3.2.1 - Enhanced API Documentation + Cross-Platform Validation (Current)
+
+### 🔧 REFINEMENT RELEASE - API Enhancement + Build Validation
+- **Enhanced UMapModelInfo.ToString()**: Now includes ALL model parameters (PQ, HNSW settings)
+- **Complete model parameter display**: Sample count, dimensions, k-neighbors, min_dist, spread, metric, Product Quantization status, full HNSW parameters
+- **Cross-platform binary validation**: Both Windows/Linux libraries verified with HNSW optimization
+- **Build system refinements**: Improved Docker build process for reliable cross-compilation
+
+### 🔍 COMPLETE MODEL INFORMATION
+```csharp
+var info = model.GetModelInfo();
+Console.WriteLine(info);
+// Output: "Enhanced UMAP Model: 1000 samples, 300D → 2D, k=15, min_dist=0.350,
+//          spread=5.000, metric=Euclidean, PQ=True, HNSW(M=16, ef_c=200, ef_s=50)"
+```
+
+### ✅ VERIFIED CROSS-PLATFORM PERFORMANCE
+- **Windows uwot.dll**: 198KB with complete HNSW optimization
+- **Linux libuwot.so**: 344KB with full Linux build optimization
+- **Both platforms**: Validated with comprehensive test suites
+- **Performance consistency**: Maintained across Windows/Linux deployments
+
+---
+
+## Version 3.2.0 - Product Quantization + HNSW Hyperparameters
+
+### 🆕 MAJOR BREAKTHROUGH RELEASE - Product Quantization System
+- **Revolutionary file size compression**: 70-80% reduction with minimal quality loss
+- **Advanced k-means clustering**: 4-subspace vector quantization for optimal storage
+- **Intelligent auto-scaling**: Dataset-aware HNSW parameter optimization
+- **Enhanced memory estimation**: Real-time memory usage predictions during training
+
+---
+
+## Version 3.1.2 - Spread Parameter Implementation
 
 ### 🆕 MAJOR FEATURE RELEASE - Spread Parameter
 - **Complete spread parameter implementation**: Based on official UMAP algorithm

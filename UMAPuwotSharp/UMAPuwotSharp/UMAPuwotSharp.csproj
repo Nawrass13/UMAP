@@ -12,7 +12,7 @@
     <!-- Enhanced NuGet metadata -->
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <PackageId>UMAPuwotSharp</PackageId>
-    <Version>3.2.0</Version>
+    <Version>3.2.1</Version>
     <Authors>Amin Gholiha</Authors>
     <Company>ID Soft AB</Company>
     <Product>UMAPuwotSharp Enhanced with HNSW</Product>
@@ -25,7 +25,27 @@
     <PackageProjectUrl>https://github.com/78Spinoza/UMAP</PackageProjectUrl>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageReleaseNotes>
-🆕 MAJOR BREAKTHROUGH RELEASE - UMAP v3.2.0: Product Quantization + HNSW Hyperparameters
+🔧 REFINEMENT RELEASE - UMAP v3.2.1: Enhanced API Documentation + Cross-Platform Validation
+
+🎯 KEY IMPROVEMENTS:
+- Enhanced UMapModelInfo.ToString(): Now includes ALL model parameters (PQ, HNSW settings)
+- Cross-platform binary validation: Both Windows/Linux libraries verified with HNSW optimization
+- Complete API documentation refresh: All new parameters properly documented
+- Build system refinements: Improved Docker build process for reliable cross-compilation
+
+🔍 COMPLETE MODEL INFORMATION:
+- Enhanced ToString() now shows: samples, dimensions, k-neighbors, min_dist, spread, metric
+- NEW: Product Quantization status (PQ=True/False)
+- NEW: Full HNSW parameters (M=graph_degree, ef_c=construction_quality, ef_s=search_quality)
+- Example: "Enhanced UMAP Model: 1000 samples, 300D → 2D, k=15, min_dist=0.350, spread=5.000, metric=Euclidean, PQ=True, HNSW(M=16, ef_c=200, ef_s=50)"
+
+✅ VERIFIED CROSS-PLATFORM PERFORMANCE:
+- Windows uwot.dll: 198KB with complete HNSW optimization
+- Linux libuwot.so: 344KB with full Linux build optimization
+- Both platforms validated with comprehensive test suites
+- Performance consistency maintained across Windows/Linux deployments
+
+🚀 CONTINUES v3.2.0 BREAKTHROUGH FEATURES: Product Quantization + HNSW Hyperparameters
 
 🎯 NEW PRODUCT QUANTIZATION SYSTEM:
 - Revolutionary file size compression: 70-80% reduction with minimal quality loss

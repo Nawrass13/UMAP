@@ -91,7 +91,7 @@ var exactEmbedding = model.Fit(data, forceExactKnn: true);   // Traditional appr
 ## Enhanced Features
 
 ### 🎯 **Product Quantization for 70-80% File Size Reduction**
-**NEW in v3.2.0**: Revolutionary file compression system with minimal quality loss!
+**NEW in v3.2.0+**: Revolutionary file compression system with minimal quality loss!
 
 ```csharp
 // Enable Product Quantization (default in v3.2.0)
@@ -623,7 +623,7 @@ HNSW acceleration works with multiple distance metrics:
 ## Version Information
 
 - **Enhanced Native Libraries**: Based on uwot algorithms with revolutionary HNSW optimization
-- **C# Wrapper**: Version 3.0.1+ (UMAPuwotSharp with HNSW)
+- **C# Wrapper**: Version 3.2.1+ (UMAPuwotSharp with HNSW + PQ)
 - **Target Framework**: .NET 8.0
 - **Supported Platforms**: Windows x64, Linux x64 (both with HNSW optimization)
 - **Key Features**: HNSW k-NN optimization, Production safety, Multi-dimensional (1D-50D), Multi-metric, Enhanced progress reporting, OpenMP parallelization
@@ -632,6 +632,7 @@ HNSW acceleration works with multiple distance metrics:
 
 | Version | Release Date | Key Features | Performance |
 |---------|--------------|--------------|-------------|
+| **3.2.1** | 2025-01-15 | Enhanced ToString() API, Complete model parameter display, Cross-platform binary validation | Improved debugging and monitoring |
 | **3.2.0** | 2025-01-15 | **Product Quantization system**, HNSW hyperparameter control, Enhanced memory estimation, 70-80% file compression | **Storage optimization**, dataset-aware auto-scaling |
 | **3.1.2** | 2025-01-15 | Smart spread parameter implementation, Dimension-aware defaults, Enhanced progress reporting | Optimal embedding quality across dimensions |
 | **3.1.0** | 2025-01-15 | Revolutionary HNSW optimization, Enhanced API with forceExactKnn parameter, Multi-core OpenMP acceleration | **50-2000x speedup**, 80-85% memory reduction |
