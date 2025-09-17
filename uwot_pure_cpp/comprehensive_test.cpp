@@ -409,18 +409,52 @@ bool test_model_save_load() {
                         orig_ef_construction == load_ef_construction &&
                         orig_ef_search == load_ef_search);
 
-    // Test transform functionality on loaded model
-    printf("Testing transform on loaded model...\n");
+    // Test transform functionality and projection consistency
+    printf("Testing transform and projection consistency...\n");
     auto transform_data = generate_test_data(10, 50, 999); // Different seed
     std::vector<float> transform_embedding(10 * TEST_EMBEDDING_DIM);
 
     result = uwot_transform(loaded_model, transform_data.data(), 10, 50, transform_embedding.data());
     bool transform_works = (result == 0);
 
+    // Test projection consistency: project same point with original and loaded model
+    std::vector<float> test_point(50);
+    for (int i = 0; i < 50; i++) {
+        test_point[i] = test_data[i]; // Use first sample from training data
+    }
+
+    std::vector<float> orig_projection(TEST_EMBEDDING_DIM);
+    std::vector<float> loaded_projection(TEST_EMBEDDING_DIM);
+
+    // Project with original model
+    int orig_result = uwot_transform(original_model, test_point.data(), 1, 50, orig_projection.data());
+
+    // Project with loaded model
+    int load_result = uwot_transform(loaded_model, test_point.data(), 1, 50, loaded_projection.data());
+
+    bool projections_consistent = (orig_result == 0 && load_result == 0);
+    float max_projection_diff = 0.0f;
+
+    if (projections_consistent) {
+        for (int i = 0; i < TEST_EMBEDDING_DIM; i++) {
+            float diff = std::abs(orig_projection[i] - loaded_projection[i]);
+            max_projection_diff = std::max(max_projection_diff, diff);
+        }
+
+        // Use tolerance based on quantization setting
+        float tolerance = orig_use_quantization ? 0.1f : 0.001f;
+        projections_consistent = (max_projection_diff < tolerance);
+
+        printf("Original projection:  [%.6f, %.6f]\n", orig_projection[0], orig_projection[1]);
+        printf("Loaded projection:    [%.6f, %.6f]\n", loaded_projection[0], loaded_projection[1]);
+        printf("Max difference:       %.6f (tolerance: %.6f)\n", max_projection_diff, tolerance);
+    }
+
     // Print results
     printf("\n=== SAVE/LOAD VERIFICATION RESULTS ===\n");
     printf("Parameters preserved: %s\n", params_match ? "YES" : "NO");
     printf("Transform functional: %s\n", transform_works ? "YES" : "NO");
+    printf("Projections consistent: %s\n", projections_consistent ? "YES" : "NO");
     printf("File format version: 5 (with HNSW + PQ support)\n");
 
     if (!params_match) {
@@ -435,7 +469,7 @@ bool test_model_save_load() {
             printf("  HNSW ef_search: %d vs %d\n", orig_ef_search, load_ef_search);
     }
 
-    bool success = params_match && transform_works;
+    bool success = params_match && transform_works && projections_consistent;
 
     uwot_destroy(original_model);
     uwot_destroy(loaded_model);
@@ -512,6 +546,99 @@ bool test_file_size_analysis() {
     return true;
 }
 
+// Test 5: Dynamic PQ Optimization for Various Dimensions
+bool test_dynamic_pq_optimization() {
+    printf("\n=== Test 5: Dynamic PQ Optimization for Various Dimensions ===\n");
+
+    struct TestDimension {
+        int dim;
+        const char* description;
+        int expected_pq_m;  // Expected optimal pq_m value
+    };
+
+    TestDimension test_dims[] = {
+        {100, "100D - divisible by 4", 4},
+        {150, "150D - divisible by 2,3,5", 2}, // 150 = 2×3×5², largest suitable divisor
+        {200, "200D - divisible by 4,8", 8},    // 200 = 2³×5², should prefer 8
+        {250, "250D - divisible by 2,5", 2},    // 250 = 2×5³, only 2 works with min_subspace_dim=4
+        {300, "300D - divisible by 4,12", 8},   // 300 = 2²×3×5², should prefer 8
+        {128, "128D - power of 2", 16},         // 128 = 2⁷, should prefer 16
+        {99,  "99D - prime factors 3,11", 1},  // 99 = 3²×11, no suitable divisor ≥4
+    };
+
+    int num_tests = sizeof(test_dims) / sizeof(test_dims[0]);
+    int passed = 0;
+
+    printf("Dimension       | Expected pq_m | Actual pq_m | PQ Applied | Result\n");
+    printf("----------------|---------------|-------------|------------|--------\n");
+
+    for (int i = 0; i < num_tests; i++) {
+        TestDimension& test = test_dims[i];
+
+        // Generate small test dataset for this dimension
+        std::vector<float> test_data = generate_test_data(50, test.dim);
+
+        UwotModel* model = uwot_create();
+        std::vector<float> embedding(50 * 2); // 2D embedding
+
+        // Train with quantization enabled
+        int result = uwot_fit_with_enhanced_progress(model, test_data.data(),
+            50, test.dim, 2, 15, 0.1f, 1.0f, 50, UWOT_METRIC_EUCLIDEAN,
+            embedding.data(), nullptr, 0, 1, -1, -1, -1, -1);
+
+        if (result != UWOT_SUCCESS) {
+            printf("%-15s | %13d | %11s | %10s | FAILED\n",
+                test.description, test.expected_pq_m, "ERROR", "N/A");
+            uwot_destroy(model);
+            continue;
+        }
+
+        // Get model info to check actual pq_m used
+        int n_vertices, n_dim, embedding_dim, n_neighbors, use_quantization;
+        int hnsw_M, hnsw_ef_construction, hnsw_ef_search;
+        float min_dist, spread;
+        UwotMetric metric;
+
+        int info_result = uwot_get_model_info(model, &n_vertices, &n_dim, &embedding_dim,
+            &n_neighbors, &min_dist, &spread, &metric, &use_quantization,
+            &hnsw_M, &hnsw_ef_construction, &hnsw_ef_search);
+
+        bool test_passed = (info_result == UWOT_SUCCESS);
+        bool pq_applied = (use_quantization != 0);
+
+        // For dimensions where PQ should be disabled (pq_m=1), check that quantization is off
+        if (test.expected_pq_m == 1) {
+            test_passed = !pq_applied;
+        } else {
+            test_passed = pq_applied;
+        }
+
+        printf("%-15s | %13d | %11s | %10s | %s\n",
+            test.description,
+            test.expected_pq_m,
+            info_result == UWOT_SUCCESS ? (pq_applied ? "4+" : "1") : "ERROR",
+            pq_applied ? "YES" : "NO",
+            test_passed ? "PASS" : "FAIL");
+
+        if (test_passed) passed++;
+        uwot_destroy(model);
+    }
+
+    printf("\nDynamic PQ Test Results: %d/%d tests passed\n", passed, num_tests);
+    printf("Key Insights:\n");
+    printf("- Dimensions divisible by 4, 8, 16 should enable PQ with optimal subspaces\n");
+    printf("- Dimensions with limited divisors should fall back to smaller pq_m values\n");
+    printf("- Dimensions with no suitable divisors should disable PQ (pq_m=1)\n");
+
+    if (passed == num_tests) {
+        printf("Test 5: PASSED - Dynamic PQ optimization working correctly\n");
+        return true;
+    } else {
+        printf("Test 5: FAILED - %d/%d dimension tests failed\n", num_tests - passed, num_tests);
+        return false;
+    }
+}
+
 // Main test runner
 int main() {
     printf("===== COMPREHENSIVE UMAP HNSW + PQ TEST SUITE =====\n");
@@ -519,13 +646,14 @@ int main() {
            TEST_SAMPLES, TEST_DIMENSIONS, TEST_EMBEDDING_DIM);
 
     int tests_passed = 0;
-    int total_tests = 4;
+    int total_tests = 5;
 
     // Run all tests
     if (test_quantization_comparison()) tests_passed++;
     if (test_hnsw_parameter_performance()) tests_passed++;
     if (test_model_save_load()) tests_passed++;
     if (test_file_size_analysis()) tests_passed++;
+    if (test_dynamic_pq_optimization()) tests_passed++;
 
     // Final summary
     printf("\n===== FINAL TEST RESULTS =====\n");

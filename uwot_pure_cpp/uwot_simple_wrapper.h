@@ -92,7 +92,8 @@ extern "C" {
         int use_quantization = 1,
         int M = -1,
         int ef_construction = -1,
-        int ef_search = -1);
+        int ef_search = -1,
+        int pq_subspaces = -1);
 
     // Enhanced training functions with detailed progress reporting
     UWOT_API int uwot_fit_with_enhanced_progress(UwotModel* model,
@@ -111,7 +112,32 @@ extern "C" {
         int use_quantization = 1,
         int M = -1,
         int ef_construction = -1,
-        int ef_search = -1);
+        int ef_search = -1,
+        int pq_subspaces = -1);
+
+    // Enhanced training functions with loss reporting (v2 API)
+    UWOT_API int uwot_fit_with_progress_v2(UwotModel* model,
+        float* data,
+        int n_obs,
+        int n_dim,
+        int embedding_dim,
+        int n_neighbors,
+        float min_dist,
+        float spread,
+        int n_epochs,
+        UwotMetric metric,
+        float* embedding,
+        uwot_progress_callback_v2 progress_callback,
+        int force_exact_knn = 0,
+        int use_quantization = 1,
+        int M = -1,
+        int ef_construction = -1,
+        int ef_search = -1,
+        int pq_subspaces = -1);
+
+    // Global callback management functions
+    UWOT_API void uwot_set_global_callback(uwot_progress_callback_v2 callback);
+    UWOT_API void uwot_clear_global_callback();
 
     // Transform functions
     UWOT_API int uwot_transform(UwotModel* model,

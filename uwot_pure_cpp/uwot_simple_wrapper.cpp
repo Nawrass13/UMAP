@@ -1310,19 +1310,55 @@ void save_hnsw_to_stream_compressed(std::ostream &output, hnswlib::HierarchicalN
 
 void load_hnsw_from_stream_compressed(std::istream &input, hnswlib::HierarchicalNSW<float>* hnsw_index,
                                     hnswlib::SpaceInterface<float>* space) {
+    std::string temp_filename;
+
     try {
-        // Read LZ4 compression headers
+        // Read LZ4 compression headers with validation
         size_t uncompressed_size;
         int compressed_size;
+
         input.read(reinterpret_cast<char*>(&uncompressed_size), sizeof(size_t));
+        if (!input.good()) {
+            throw std::runtime_error("Failed to read uncompressed size header");
+        }
+
         input.read(reinterpret_cast<char*>(&compressed_size), sizeof(int));
+        if (!input.good()) {
+            throw std::runtime_error("Failed to read compressed size header");
+        }
 
-        // Read compressed data
-        std::vector<char> compressed_data(compressed_size);
+        // Sanity checks to prevent crashes from corrupted data
+        const size_t max_uncompressed = 1ULL * 1024 * 1024 * 1024; // 1GB limit
+        const size_t max_compressed = 500 * 1024 * 1024; // 500MB limit
+
+        if (uncompressed_size == 0 || uncompressed_size > max_uncompressed) {
+            throw std::runtime_error("Invalid uncompressed size in HNSW data");
+        }
+
+        if (compressed_size <= 0 || static_cast<size_t>(compressed_size) > max_compressed) {
+            throw std::runtime_error("Invalid compressed size in HNSW data");
+        }
+
+        // Read compressed data with validation
+        std::vector<char> compressed_data;
+        try {
+            compressed_data.resize(compressed_size);
+        } catch (const std::bad_alloc&) {
+            throw std::runtime_error("Failed to allocate memory for compressed HNSW data");
+        }
+
         input.read(compressed_data.data(), compressed_size);
+        if (!input.good() || input.gcount() != compressed_size) {
+            throw std::runtime_error("Failed to read compressed HNSW data from stream");
+        }
 
-        // Decompress data using LZ4 (extremely fast decompression)
-        std::vector<char> uncompressed_data(uncompressed_size);
+        // Decompress data using LZ4 with validation
+        std::vector<char> uncompressed_data;
+        try {
+            uncompressed_data.resize(uncompressed_size);
+        } catch (const std::bad_alloc&) {
+            throw std::runtime_error("Failed to allocate memory for uncompressed HNSW data");
+        }
 
         int result = LZ4_decompress_safe(
             compressed_data.data(),
@@ -1331,11 +1367,11 @@ void load_hnsw_from_stream_compressed(std::istream &input, hnswlib::Hierarchical
             static_cast<int>(uncompressed_size));
 
         if (result != static_cast<int>(uncompressed_size)) {
-            throw std::runtime_error("LZ4 HNSW decompression failed");
+            throw std::runtime_error("LZ4 HNSW decompression failed - corrupted data or invalid format");
         }
 
         // Write to temporary file for HNSW loading
-        std::string temp_filename = hnsw_stream_utils::generate_unique_temp_filename("hnsw_decompress");
+        temp_filename = hnsw_stream_utils::generate_unique_temp_filename("hnsw_decompress");
         std::ofstream temp_file(temp_filename, std::ios::binary);
         if (!temp_file.is_open()) {
             throw std::runtime_error("Failed to create temporary HNSW file for decompression");
@@ -1344,14 +1380,28 @@ void load_hnsw_from_stream_compressed(std::istream &input, hnswlib::Hierarchical
         temp_file.write(uncompressed_data.data(), uncompressed_size);
         temp_file.close();
 
+        if (!temp_file.good()) {
+            throw std::runtime_error("Failed to write decompressed HNSW data to temporary file");
+        }
+
         // Load from temporary file using HNSW API
         hnsw_index->loadIndex(temp_filename, space);
 
         // Clean up temporary file
         temp_utils::safe_remove_file(temp_filename);
 
+    } catch (const std::exception& e) {
+        // Clean up temporary file if it was created
+        if (!temp_filename.empty()) {
+            temp_utils::safe_remove_file(temp_filename);
+        }
+        throw std::runtime_error(std::string("HNSW decompression failed: ") + e.what());
     } catch (...) {
-        throw;
+        // Clean up temporary file if it was created
+        if (!temp_filename.empty()) {
+            temp_utils::safe_remove_file(temp_filename);
+        }
+        throw std::runtime_error("HNSW decompression failed with unknown error");
     }
 }
 
@@ -2569,6 +2619,22 @@ extern "C" {
             if (version >= 3) {
                 file.read(reinterpret_cast<char*>(&model->use_normalization), sizeof(bool));
 
+                // Read HNSW hyperparameters (version 5+) - CRITICAL: Must be in same position as save!
+                if (version >= 5) {
+                    file.read(reinterpret_cast<char*>(&model->hnsw_M), sizeof(int));
+                    file.read(reinterpret_cast<char*>(&model->hnsw_ef_construction), sizeof(int));
+                    file.read(reinterpret_cast<char*>(&model->hnsw_ef_search), sizeof(int));
+                    file.read(reinterpret_cast<char*>(&model->use_quantization), sizeof(bool));
+                    file.read(reinterpret_cast<char*>(&model->pq_m), sizeof(int));
+                } else {
+                    // Set default HNSW parameters for older versions
+                    model->hnsw_M = 32;
+                    model->hnsw_ef_construction = 128;
+                    model->hnsw_ef_search = 64;
+                    model->use_quantization = false;
+                    model->pq_m = 4;
+                }
+
                 // Read normalization parameters
                 size_t means_size;
                 file.read(reinterpret_cast<char*>(&means_size), sizeof(size_t));
@@ -2591,21 +2657,6 @@ extern "C" {
                 file.read(reinterpret_cast<char*>(&model->mild_outlier_threshold), sizeof(float));
                 file.read(reinterpret_cast<char*>(&model->extreme_outlier_threshold), sizeof(float));
 
-                // Read HNSW hyperparameters (version 5+)
-                if (version >= 5) {
-                    file.read(reinterpret_cast<char*>(&model->hnsw_M), sizeof(int));
-                    file.read(reinterpret_cast<char*>(&model->hnsw_ef_construction), sizeof(int));
-                    file.read(reinterpret_cast<char*>(&model->hnsw_ef_search), sizeof(int));
-                    file.read(reinterpret_cast<char*>(&model->use_quantization), sizeof(bool));
-                    file.read(reinterpret_cast<char*>(&model->pq_m), sizeof(int));
-                } else {
-                    // Set default HNSW parameters for older versions
-                    model->hnsw_M = 32;
-                    model->hnsw_ef_construction = 128;
-                    model->hnsw_ef_search = 64;
-                    model->use_quantization = false;
-                    model->pq_m = 4;
-                }
             }
             else {
                 // For older versions, set defaults
@@ -2635,22 +2686,52 @@ extern "C" {
 
             // Read Product Quantization data (version 5+)
             if (version >= 5) {
-                // Read PQ codes
-                size_t codes_size;
-                file.read(reinterpret_cast<char*>(&codes_size), sizeof(size_t));
-                if (codes_size > 0) {
-                    model->pq_codes.resize(codes_size);
-                    file.read(reinterpret_cast<char*>(model->pq_codes.data()),
-                        codes_size * sizeof(uint8_t));
-                }
+                try {
+                    // Read PQ codes with safety checks
+                    size_t codes_size;
+                    file.read(reinterpret_cast<char*>(&codes_size), sizeof(size_t));
 
-                // Read PQ centroids
-                size_t centroids_size;
-                file.read(reinterpret_cast<char*>(&centroids_size), sizeof(size_t));
-                if (centroids_size > 0) {
-                    model->pq_centroids.resize(centroids_size);
-                    file.read(reinterpret_cast<char*>(model->pq_centroids.data()),
-                        centroids_size * sizeof(float));
+                    // Sanity check: prevent excessive memory allocation
+                    const size_t max_codes_size = 1024 * 1024 * 1024; // 1GB limit
+                    if (codes_size > max_codes_size) {
+                        throw std::runtime_error("PQ codes size too large, possible corruption");
+                    }
+
+                    if (codes_size > 0) {
+                        model->pq_codes.resize(codes_size);
+                        file.read(reinterpret_cast<char*>(model->pq_codes.data()),
+                            codes_size * sizeof(uint8_t));
+
+                        if (!file.good()) {
+                            throw std::runtime_error("Failed to read PQ codes data");
+                        }
+                    }
+
+                    // Read PQ centroids with safety checks
+                    size_t centroids_size;
+                    file.read(reinterpret_cast<char*>(&centroids_size), sizeof(size_t));
+
+                    // Sanity check: prevent excessive memory allocation
+                    const size_t max_centroids_size = 100 * 1024 * 1024; // 100MB limit
+                    if (centroids_size > max_centroids_size) {
+                        throw std::runtime_error("PQ centroids size too large, possible corruption");
+                    }
+
+                    if (centroids_size > 0) {
+                        model->pq_centroids.resize(centroids_size);
+                        file.read(reinterpret_cast<char*>(model->pq_centroids.data()),
+                            centroids_size * sizeof(float));
+
+                        if (!file.good()) {
+                            throw std::runtime_error("Failed to read PQ centroids data");
+                        }
+                    }
+                } catch (const std::exception& e) {
+                    // If PQ loading fails, continue without quantization
+                    model->use_quantization = false;
+                    model->pq_codes.clear();
+                    model->pq_centroids.clear();
+                    // Don't rethrow - just log and continue
                 }
             }
 
@@ -2695,29 +2776,61 @@ extern "C" {
                 size_t hnsw_size;
                 file.read(reinterpret_cast<char*>(&hnsw_size), sizeof(size_t));
 
-                if (hnsw_size > 0) {
+                // Sanity check HNSW size to prevent crashes
+                const size_t max_hnsw_size = 2ULL * 1024 * 1024 * 1024; // 2GB limit
+                if (hnsw_size > max_hnsw_size) {
+                    // Skip corrupted/oversized HNSW data
+                    model->ann_index = nullptr;
                     try {
+                        file.seekg(static_cast<std::streamoff>(hnsw_size), std::ios::cur);
+                    } catch (...) {
+                        // Skip seek error and continue without HNSW
+                    }
+                } else if (hnsw_size > 0) {
+                    try {
+                        // Initialize space factory safely
+                        if (!model->space_factory) {
+                            model->space_factory = std::make_unique<hnsw_utils::SpaceFactory>();
+                        }
+
                         // Load HNSW index directly from stream (no temporary files)
                         // Use default Euclidean space for loading (will be updated when used)
                         if (!model->space_factory->create_space(UWOT_METRIC_EUCLIDEAN, model->n_dim)) {
-                            throw std::runtime_error("Failed to create space");
+                            throw std::runtime_error("Failed to create HNSW space");
                         }
+
                         model->ann_index = std::make_unique<hnswlib::HierarchicalNSW<float>>(
                             model->space_factory->get_space());
                         model->ann_index->setEf(model->hnsw_ef_search);  // Set query-time ef parameter
 
-                        // Load HNSW data with LZ4 decompression
+                        // Load HNSW data with LZ4 decompression - THIS IS THE CRITICAL CRASH POINT
                         load_hnsw_from_stream_compressed(file, model->ann_index.get(), model->space_factory->get_space());
 
-                    } catch (...) {
-                        // Error loading HNSW, clean up and continue without index
+                    } catch (const std::exception& e) {
+                        // HNSW loading failed - continue without index (graceful degradation)
                         model->ann_index = nullptr;
 
-                        // Skip remaining HNSW data in file
+                        // Try to skip remaining HNSW data to continue loading
+                        try {
+                            // Get current position and calculate remaining bytes to skip
+                            std::streampos current_pos = file.tellg();
+                            if (current_pos != std::streampos(-1)) {
+                                // We can seek - skip remaining HNSW data
+                                file.seekg(static_cast<std::streamoff>(hnsw_size), std::ios::cur);
+                            } else {
+                                // Cannot seek - file is corrupted, but don't crash
+                                // Continue with partial model load
+                            }
+                        } catch (...) {
+                            // Seek failed - continue anyway with partial model
+                        }
+                    } catch (...) {
+                        // Unknown error - continue without HNSW index
+                        model->ann_index = nullptr;
                         try {
                             file.seekg(static_cast<std::streamoff>(hnsw_size), std::ios::cur);
                         } catch (...) {
-                            // If seek fails, we're in trouble
+                            // Skip seek error
                         }
                     }
                 }

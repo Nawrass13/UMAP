@@ -187,11 +187,12 @@ namespace UMAPuwotSharp.Tests
             var progressReports = new System.Collections.Generic.List<string>();
             bool progressCallbackInvoked = false;
 
-            // Progress callback that captures reports
-            void ProgressCallback(int epoch, int totalEpochs, float percent)
+            // Enhanced progress callback that captures reports
+            void ProgressCallback(string phase, int current, int total, float percent, string? message)
             {
                 progressCallbackInvoked = true;
-                var report = $"Epoch {epoch}/{totalEpochs}: {percent:F1}%";
+                var msg = !string.IsNullOrEmpty(message) ? $" ({message})" : "";
+                var report = $"{phase}: {current}/{total}: {percent:F1}%{msg}";
                 progressReports.Add(report);
                 Console.WriteLine($"[PROGRESS] {report}");
             }
@@ -252,7 +253,7 @@ namespace UMAPuwotSharp.Tests
         }
 
         /// <summary>
-        /// Test model persistence with HNSW indices
+        /// Test model persistence with HNSW indices and projection consistency
         /// </summary>
         [TestMethod]
         public void Test_Model_Persistence()
@@ -261,7 +262,10 @@ namespace UMAPuwotSharp.Tests
 
             try
             {
-                // Train and save model
+                float[,] originalProjection;
+                float[,] testPoint = GenerateSingleSample(TestFeatures, seed: 777);
+
+                // Train, project, and save model
                 using (var model = new UMapModel())
                 {
                     var embedding = model.Fit(_testData,
@@ -271,24 +275,46 @@ namespace UMAPuwotSharp.Tests
 
                     Assert.IsTrue(model.IsFitted);
 
+                    // Project test point with original model
+                    originalProjection = model.Transform(testPoint);
+                    Assert.IsNotNull(originalProjection);
+                    Assert.AreEqual(2, originalProjection.GetLength(1));
+
+                    Console.WriteLine($"Original projection: [{originalProjection[0,0]:F6}, {originalProjection[0,1]:F6}]");
+
                     // Save model
                     model.Save(modelPath);
                 }
 
-                // Load and test model
+                // Load and test projection consistency
                 using (var loadedModel = UMapModel.Load(modelPath))
                 {
                     Assert.IsTrue(loadedModel.IsFitted);
 
-                    // Test transform with loaded model
-                    var newData = GenerateSingleSample(TestFeatures, seed: 777);
-                    var transformResult = loadedModel.Transform(newData);
+                    // Project same test point with loaded model
+                    var loadedProjection = loadedModel.Transform(testPoint);
 
-                    Assert.IsNotNull(transformResult);
-                    Assert.AreEqual(2, transformResult.GetLength(1));
+                    Assert.IsNotNull(loadedProjection);
+                    Assert.AreEqual(2, loadedProjection.GetLength(1));
 
-                    Console.WriteLine($"Model persistence test passed - transform result: " +
-                                    $"[{transformResult[0,0]:F3}, {transformResult[0,1]:F3}]");
+                    Console.WriteLine($"Loaded projection:  [{loadedProjection[0,0]:F6}, {loadedProjection[0,1]:F6}]");
+
+                    // Calculate projection differences
+                    double maxDifference = 0.0;
+                    for (int j = 0; j < 2; j++)
+                    {
+                        double diff = Math.Abs(originalProjection[0, j] - loadedProjection[0, j]);
+                        maxDifference = Math.Max(maxDifference, diff);
+                    }
+
+                    Console.WriteLine($"Max difference: {maxDifference:F6}");
+
+                    // Validate projection consistency (tolerance allows for quantization effects)
+                    const double tolerance = 0.001; // Stricter tolerance for C# integration test
+                    Assert.IsTrue(maxDifference < tolerance,
+                        $"Projection difference ({maxDifference:F6}) should be < {tolerance:F6} for consistent save/load");
+
+                    Console.WriteLine($"✅ Projection consistency validated (diff={maxDifference:F6} < {tolerance:F6})");
                 }
             }
             finally

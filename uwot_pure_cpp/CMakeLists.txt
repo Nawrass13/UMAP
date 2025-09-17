@@ -116,6 +116,24 @@ if(BUILD_TESTS)
     )
     target_link_libraries(comprehensive_test uwot_wrapper)
 
+    # Save/Load fix test with projection consistency
+    add_executable(test_save_load_fix
+        ${CMAKE_CURRENT_SOURCE_DIR}/test_save_load_fix.cpp
+    )
+    target_link_libraries(test_save_load_fix uwot_wrapper)
+
+    # Simple focused save/load test
+    add_executable(simple_load_save_test
+        ${CMAKE_CURRENT_SOURCE_DIR}/simple_load_save_test.cpp
+    )
+    target_link_libraries(simple_load_save_test uwot_wrapper)
+
+    # Fit-project-save-load-project-compare test
+    add_executable(fit_project_save_load_test
+        ${CMAKE_CURRENT_SOURCE_DIR}/fit_project_save_load_test.cpp
+    )
+    target_link_libraries(fit_project_save_load_test uwot_wrapper)
+
     # Suppress warnings for test executables
     if(MSVC)
         target_compile_options(test_enhanced_wrapper PRIVATE
@@ -133,6 +151,21 @@ if(BUILD_TESTS)
             /wd4267  # size_t conversion warnings
             /wd4566  # unicode character warnings
         )
+        target_compile_options(test_save_load_fix PRIVATE
+            /wd4244  # conversion warnings
+            /wd4267  # size_t conversion warnings
+            /wd4566  # unicode character warnings
+        )
+        target_compile_options(simple_load_save_test PRIVATE
+            /wd4244  # conversion warnings
+            /wd4267  # size_t conversion warnings
+            /wd4566  # unicode character warnings
+        )
+        target_compile_options(fit_project_save_load_test PRIVATE
+            /wd4244  # conversion warnings
+            /wd4267  # size_t conversion warnings
+            /wd4566  # unicode character warnings
+        )
     endif()
 
     # Add tests
@@ -140,6 +173,7 @@ if(BUILD_TESTS)
     add_test(NAME EnhancedWrapperTest COMMAND test_enhanced_wrapper)
     add_test(NAME HNSWValidationTest COMMAND hnsw_validation_test)
     add_test(NAME ComprehensiveTest COMMAND comprehensive_test)
+    add_test(NAME SaveLoadFixTest COMMAND test_save_load_fix)
 endif()
 
 # Package configuration

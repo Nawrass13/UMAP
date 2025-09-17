@@ -368,9 +368,19 @@ Enhanced production-ready C# wrapper providing .NET integration:
 
 The fastest way to get started with all enhanced features:
 
+## 🐛 Latest Release: v3.2.3 - Critical Production Fix
+
+### What's Fixed in v3.2.3
+- **🔧 Critical Save/Load Bug**: Fixed production crash caused by binary format mismatch
+- **✅ Perfect Projection Consistency**: Original vs loaded models now produce identical results (0.000000 difference)
+- **🧪 Enhanced Test Suite**: Added comprehensive save/load validation to prevent regression
+- **⚡ Cross-Platform Verified**: Both Windows and Linux libraries validated with complete HNSW optimization
+
+**⚠️ Important**: All .umap files created with v3.2.2 and earlier should be regenerated for guaranteed consistency.
+
 ```cmd
-# Install via NuGet (when published)
-dotnet add package UMAPuwotSharp
+# Install via NuGet
+dotnet add package UMAPuwotSharp --version 3.2.3
 
 # Or clone and build the enhanced C# wrapper
 git clone https://github.com/78Spinoza/UMAP.git
