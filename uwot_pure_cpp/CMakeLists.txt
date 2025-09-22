@@ -18,6 +18,8 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 # Source files (using actual file names in root directory)
 set(UWOT_WRAPPER_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/uwot_simple_wrapper.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/uwot_progress_utils.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/uwot_hnsw_utils.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/lz4.c
 )
 

@@ -118,7 +118,7 @@ CMAKE_PROJECT_DESCRIPTION:STATIC=
 CMAKE_PROJECT_HOMEPAGE_URL:STATIC=
 
 //Value Computed by CMake
-CMAKE_PROJECT_NAME:STATIC=UMAPWrapper
+CMAKE_PROJECT_NAME:STATIC=UMWWGBWrapper
 
 //Value Computed by CMake
 CMAKE_PROJECT_VERSION:STATIC=3.5.0
@@ -226,6 +226,15 @@ UMAPWrapper_IS_TOP_LEVEL:STATIC=ON
 
 //Value Computed by CMake
 UMAPWrapper_SOURCE_DIR:STATIC=C:/UMAP/uwot_pure_cpp
+
+//Value Computed by CMake
+UMWWGBWrapper_BINARY_DIR:STATIC=C:/UMAP/uwot_pure_cpp/build-test
+
+//Value Computed by CMake
+UMWWGBWrapper_IS_TOP_LEVEL:STATIC=ON
+
+//Value Computed by CMake
+UMWWGBWrapper_SOURCE_DIR:STATIC=C:/UMAP/uwot_pure_cpp
 
 
 ########################

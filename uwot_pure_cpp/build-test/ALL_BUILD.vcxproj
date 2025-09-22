@@ -173,33 +173,9 @@ if %errorlevel% neq 0 goto :VCEnd</Command>
       <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
       <CopyToOutputDirectory>Never</CopyToOutputDirectory>
     </ProjectReference>
-    <ProjectReference Include="C:\UMAP\uwot_pure_cpp\build-test\debug_large_save_load.vcxproj">
-      <Project>{4219D0F2-072B-303F-B35E-A9634557262C}</Project>
-      <Name>debug_large_save_load</Name>
-    </ProjectReference>
-    <ProjectReference Include="C:\UMAP\uwot_pure_cpp\build-test\simple_save_load_test.vcxproj">
-      <Project>{5EB44146-61E0-3F25-BF18-50E1DB2E473B}</Project>
-      <Name>simple_save_load_test</Name>
-    </ProjectReference>
-    <ProjectReference Include="C:\UMAP\uwot_pure_cpp\build-test\test_fixed_large_scale.vcxproj">
-      <Project>{DBF52A9C-1B5B-382A-9295-1FD676DF2B1F}</Project>
-      <Name>test_fixed_large_scale</Name>
-    </ProjectReference>
-    <ProjectReference Include="C:\UMAP\uwot_pure_cpp\build-test\test_hnsw_exact_mse_unified.vcxproj">
-      <Project>{DE79B09C-7F9E-3A76-9EF8-30D6928F7C06}</Project>
-      <Name>test_hnsw_exact_mse_unified</Name>
-    </ProjectReference>
-    <ProjectReference Include="C:\UMAP\uwot_pure_cpp\build-test\test_realistic_mse.vcxproj">
-      <Project>{83855468-7FC9-3A14-86D6-26428585D7D7}</Project>
-      <Name>test_realistic_mse</Name>
-    </ProjectReference>
-    <ProjectReference Include="C:\UMAP\uwot_pure_cpp\build-test\test_user_exact_params.vcxproj">
-      <Project>{0469409F-0171-319B-AC91-39A2503477A0}</Project>
-      <Name>test_user_exact_params</Name>
-    </ProjectReference>
-    <ProjectReference Include="C:\UMAP\uwot_pure_cpp\build-test\test_user_params.vcxproj">
-      <Project>{D89DC88B-17B8-3A53-B399-F373AE5166FB}</Project>
-      <Name>test_user_params</Name>
+    <ProjectReference Include="C:\UMAP\uwot_pure_cpp\build-test\test_error_fixes_simple.vcxproj">
+      <Project>{99DDFE4E-0B3E-3E70-845C-81196CA83D76}</Project>
+      <Name>test_error_fixes_simple</Name>
     </ProjectReference>
     <ProjectReference Include="C:\UMAP\uwot_pure_cpp\build-test\uwot_wrapper.vcxproj">
       <Project>{600D8B35-FE79-3858-8A12-0407BD3CB9C1}</Project>

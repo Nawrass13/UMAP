@@ -80,7 +80,8 @@
       "Bash(cd /d C:UMAP)",
       "Bash(rm:*)",
       "Bash(\"C:\\Program Files\\Microsoft Visual Studio\\2022\\Professional\\VC\\Tools\\MSVC\\14.44.35207\\bin\\Hostx64\\x64\\cl.exe\" /I\"C:\\UMAP\\uwot_pure_cpp\" \"C:\\UMAP\\test_save_load_fix.cpp\" \"C:\\UMAP\\uwot_pure_cpp\\build-fix\\Release\\uwot.lib\" /Fe:\"C:\\UMAP\\test_save_load_fix.exe\" /std:c++17 /openmp /EHsc)",
-      "Bash(taskkill:*)"
+      "Bash(taskkill:*)",
+      "Bash(./test_error_fixes_simple.exe)"
     ],
     "deny": [],
     "ask": []

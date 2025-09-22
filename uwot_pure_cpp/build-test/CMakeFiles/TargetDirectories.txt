@@ -1,11 +1,5 @@
 C:/UMAP/uwot_pure_cpp/build-test/CMakeFiles/uwot_wrapper.dir
-C:/UMAP/uwot_pure_cpp/build-test/CMakeFiles/simple_save_load_test.dir
-C:/UMAP/uwot_pure_cpp/build-test/CMakeFiles/debug_large_save_load.dir
-C:/UMAP/uwot_pure_cpp/build-test/CMakeFiles/test_fixed_large_scale.dir
-C:/UMAP/uwot_pure_cpp/build-test/CMakeFiles/test_user_params.dir
-C:/UMAP/uwot_pure_cpp/build-test/CMakeFiles/test_user_exact_params.dir
-C:/UMAP/uwot_pure_cpp/build-test/CMakeFiles/test_hnsw_exact_mse_unified.dir
-C:/UMAP/uwot_pure_cpp/build-test/CMakeFiles/test_realistic_mse.dir
+C:/UMAP/uwot_pure_cpp/build-test/CMakeFiles/test_error_fixes_simple.dir
 C:/UMAP/uwot_pure_cpp/build-test/CMakeFiles/INSTALL.dir
 C:/UMAP/uwot_pure_cpp/build-test/CMakeFiles/ALL_BUILD.dir
 C:/UMAP/uwot_pure_cpp/build-test/CMakeFiles/ZERO_CHECK.dir
