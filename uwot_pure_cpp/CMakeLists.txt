@@ -96,38 +96,9 @@ install(FILES ${UWOT_CORE_HEADERS}
     DESTINATION include/uwot
 )
 
-# Tests
+# Tests (removed - all test files cleaned up during quantization removal)
 if(BUILD_TESTS)
-    add_executable(simple_save_load_test ${CMAKE_CURRENT_SOURCE_DIR}/simple_save_load_test.cpp)
-    target_link_libraries(simple_save_load_test uwot_wrapper)
-
-    add_executable(debug_large_save_load ${CMAKE_CURRENT_SOURCE_DIR}/debug_large_save_load.cpp)
-    target_link_libraries(debug_large_save_load uwot_wrapper)
-
-    add_executable(test_fixed_large_scale ${CMAKE_CURRENT_SOURCE_DIR}/test_fixed_large_scale.cpp)
-    target_link_libraries(test_fixed_large_scale uwot_wrapper)
-
-    add_executable(test_user_params ${CMAKE_CURRENT_SOURCE_DIR}/test_user_params.cpp)
-    target_link_libraries(test_user_params uwot_wrapper)
-
-    add_executable(test_user_exact_params ${CMAKE_CURRENT_SOURCE_DIR}/test_user_exact_params.cpp)
-    target_link_libraries(test_user_exact_params uwot_wrapper)
-
-    add_executable(test_hnsw_exact_mse_unified ${CMAKE_CURRENT_SOURCE_DIR}/test_hnsw_exact_mse_unified.cpp)
-    target_link_libraries(test_hnsw_exact_mse_unified uwot_wrapper)
-
-    add_executable(test_realistic_mse ${CMAKE_CURRENT_SOURCE_DIR}/test_realistic_mse.cpp)
-    target_link_libraries(test_realistic_mse uwot_wrapper)
-
-    if(OpenMP_CXX_FOUND)
-        target_link_libraries(simple_save_load_test OpenMP::OpenMP_CXX)
-        target_link_libraries(debug_large_save_load OpenMP::OpenMP_CXX)
-        target_link_libraries(test_fixed_large_scale OpenMP::OpenMP_CXX)
-        target_link_libraries(test_user_params OpenMP::OpenMP_CXX)
-        target_link_libraries(test_user_exact_params OpenMP::OpenMP_CXX)
-        target_link_libraries(test_hnsw_exact_mse_unified OpenMP::OpenMP_CXX)
-        target_link_libraries(test_realistic_mse OpenMP::OpenMP_CXX)
-    endif()
+    message(STATUS "Tests disabled - test files were removed during cleanup")
 endif()
 
 # Package configuration
