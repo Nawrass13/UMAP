@@ -96,9 +96,16 @@ install(FILES ${UWOT_CORE_HEADERS}
     DESTINATION include/uwot
 )
 
-# Tests (removed - all test files cleaned up during quantization removal)
+# Tests
 if(BUILD_TESTS)
-    message(STATUS "Tests disabled - test files were removed during cleanup")
+    # Simple error fixes test
+    add_executable(test_error_fixes_simple test_error_fixes_simple.cpp)
+    target_link_libraries(test_error_fixes_simple uwot_wrapper)
+    if(OpenMP_CXX_FOUND)
+        target_link_libraries(test_error_fixes_simple OpenMP::OpenMP_CXX)
+    endif()
+
+    message(STATUS "Tests enabled - test_error_fixes_simple will be built")
 endif()
 
 # Package configuration

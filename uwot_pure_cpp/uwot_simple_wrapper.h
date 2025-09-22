@@ -26,7 +26,7 @@ extern "C" {
 #define UWOT_ERROR_INVALID_MODEL_FILE -6
 
 // Version information
-#define UWOT_WRAPPER_VERSION_STRING "3.9.0"
+#define UWOT_WRAPPER_VERSION_STRING "3.10.0"
 
 // Distance metrics
     typedef enum {

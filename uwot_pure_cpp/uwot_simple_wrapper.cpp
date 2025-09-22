@@ -564,6 +564,8 @@ struct UwotModel {
     float p99_neighbor_distance;
     float mild_outlier_threshold;      // 2.5 std deviations
     float extreme_outlier_threshold;   // 4.0 std deviations
+    float median_neighbor_distance;    // Fix 3: Median distance for robust bandwidth scaling
+    float exact_match_threshold;       // Fix 3: Robust exact-match detection threshold
 
     // HNSW hyperparameters
     int hnsw_M;                        // Graph degree parameter (16-64)
@@ -582,7 +584,8 @@ struct UwotModel {
         min_neighbor_distance(0.0f), mean_neighbor_distance(0.0f),
         std_neighbor_distance(0.0f), p95_neighbor_distance(0.0f),
         p99_neighbor_distance(0.0f), mild_outlier_threshold(0.0f),
-        extreme_outlier_threshold(0.0f), hnsw_M(32), hnsw_ef_construction(128),
+        extreme_outlier_threshold(0.0f), median_neighbor_distance(0.0f),
+        exact_match_threshold(1e-3f), hnsw_M(32), hnsw_ef_construction(128),
         hnsw_ef_search(64), use_quantization(true), pq_m(4) {
 
         space_factory = std::make_unique<hnsw_utils::SpaceFactory>();
@@ -862,12 +865,19 @@ void compute_neighbor_statistics(UwotModel* model, const std::vector<float>& nor
     model->p95_neighbor_distance = all_distances[std::min(p95_idx, all_distances.size() - 1)];
     model->p99_neighbor_distance = all_distances[std::min(p99_idx, all_distances.size() - 1)];
 
+    // Fix 3: Compute median neighbor distance
+    size_t median_idx = all_distances.size() / 2;
+    model->median_neighbor_distance = all_distances[median_idx];
+
+    // Fix 3: Set robust exact-match threshold for float32
+    model->exact_match_threshold = 1e-3f / std::sqrt(static_cast<float>(model->n_dim));
+
     // Outlier thresholds
     model->mild_outlier_threshold = model->mean_neighbor_distance + 2.5f * model->std_neighbor_distance;
     model->extreme_outlier_threshold = model->mean_neighbor_distance + 4.0f * model->std_neighbor_distance;
 
-    printf("[STATS] Neighbor distances - min: %.4f, mean: %.4f +/- %.4f, p95: %.4f, p99: %.4f\n",
-        model->min_neighbor_distance, model->mean_neighbor_distance,
+    printf("[STATS] Neighbor distances - min: %.4f, median: %.4f, mean: %.4f +/- %.4f, p95: %.4f, p99: %.4f\n",
+        model->min_neighbor_distance, model->median_neighbor_distance, model->mean_neighbor_distance,
         model->std_neighbor_distance, model->p95_neighbor_distance, model->p99_neighbor_distance);
     printf("[STATS] Outlier thresholds - mild: %.4f, extreme: %.4f\n",
         model->mild_outlier_threshold, model->extreme_outlier_threshold);
@@ -1586,6 +1596,22 @@ extern "C" {
                 input_data, normalized_data, n_obs, n_dim,
                 model->feature_means, model->feature_stds, norm_mode);
 
+            // Fix 1: Ensure unit normalization for cosine distance
+            if (metric == UWOT_METRIC_COSINE) {
+                // Ensure each vector is unit-normalized (HNSW InnerProductSpace expects normalized vectors for cosine)
+                for (int i = 0; i < n_obs; ++i) {
+                    float norm = 0.0f;
+                    for (int j = 0; j < n_dim; ++j) {
+                        float v = normalized_data[static_cast<size_t>(i) * n_dim + j];
+                        norm += v * v;
+                    }
+                    norm = std::sqrt(std::max(1e-12f, norm));
+                    for (int j = 0; j < n_dim; ++j) {
+                        normalized_data[static_cast<size_t>(i) * n_dim + j] /= norm;
+                    }
+                }
+            }
+
             if (progress_callback) {
                 progress_callback(10, 100, 10.0f);  // Data normalization complete
             }
@@ -1643,6 +1669,12 @@ extern "C" {
                 uwot::mean_average(nn_distances), false,
                 nn_weights, sigmas, rhos, n_search_fails);
 
+            // Fix 2: Apply minimal weight floor to preserve relative differences
+            const double MIN_WEIGHT = 1e-6;
+            for (size_t wi = 0; wi < nn_weights.size(); ++wi) {
+                if (nn_weights[wi] < MIN_WEIGHT) nn_weights[wi] = MIN_WEIGHT;
+            }
+
             // Convert to edge format for optimization
             convert_to_edges(nn_indices, nn_weights, n_obs, n_neighbors,
                 model->positive_head, model->positive_tail, model->positive_weights);
@@ -1653,7 +1685,8 @@ extern "C" {
             model->nn_weights.resize(nn_weights.size());
             for (size_t i = 0; i < nn_distances.size(); i++) {
                 model->nn_distances[i] = static_cast<float>(nn_distances[i]);
-                model->nn_weights[i] = static_cast<float>(nn_weights[i]);
+                // Fix 2: Ensure no overly-large floor when converting to float
+                model->nn_weights[i] = static_cast<float>(std::max<double>(nn_weights[i], 1e-6));
             }
 
             // Initialize embedding
@@ -1819,9 +1852,14 @@ extern "C" {
                 std::fflush(stdout);
             }
 
-            // Copy result to output
-            std::memcpy(embedding, model->embedding.data(),
-                static_cast<size_t>(n_obs) * static_cast<size_t>(embedding_dim) * sizeof(float));
+            // Fix 6: Bounds-checked element-wise copy instead of unsafe memcpy
+            size_t expected = static_cast<size_t>(n_obs) * static_cast<size_t>(embedding_dim);
+            if (model->embedding.size() < expected) {
+                return UWOT_ERROR_MEMORY;
+            }
+            for (size_t i = 0; i < expected; ++i) {
+                embedding[i] = model->embedding[i];
+            }
 
             model->is_fitted = true;
             return UWOT_SUCCESS;
@@ -2017,8 +2055,10 @@ extern "C" {
                         exact_match_idx = neighbor_idx;
                     }
 
-                    // CRITICAL FIX: Use adaptive bandwidth that scales with actual distances
-                    float base_bandwidth = std::max(0.5f, model->mean_neighbor_distance * 0.75f);
+                    // Fix 4: Use robust neighbor statistics for bandwidth (no min_dist dependency)
+                    float eps = 1e-6f;
+                    float median_neighbor_dist = model->median_neighbor_distance > 0.0f ? model->median_neighbor_distance : model->mean_neighbor_distance;
+                    float base_bandwidth = std::max(1e-4f, 0.5f * median_neighbor_dist);
 
                     // For very distant points, increase bandwidth to prevent total weight collapse
                     float adaptive_bandwidth = base_bandwidth;
@@ -2028,8 +2068,8 @@ extern "C" {
 
                     float weight = std::exp(-distance * distance / (2.0f * adaptive_bandwidth * adaptive_bandwidth));
 
-                    // Ensure minimum weight to prevent zeros (more aggressive for large-scale)
-                    weight = std::max(weight, 0.01f);
+                    // Fix 2: Minimal weight floor to preserve distance sensitivity
+                    weight = std::max(weight, 1e-6f);
 
                     nn_indices.push_back(neighbor_idx);
                     nn_weights.push_back(weight);
@@ -2080,9 +2120,14 @@ extern "C" {
                 }
             }
 
-            // Copy result to output
-            std::memcpy(embedding, new_embedding.data(),
-                static_cast<size_t>(n_new_obs) * static_cast<size_t>(model->embedding_dim) * sizeof(float));
+            // Fix 6: Bounds-checked element-wise copy instead of unsafe memcpy
+            size_t expected = static_cast<size_t>(n_new_obs) * static_cast<size_t>(model->embedding_dim);
+            if (new_embedding.size() < expected) {
+                return UWOT_ERROR_MEMORY;
+            }
+            for (size_t i = 0; i < expected; ++i) {
+                embedding[i] = new_embedding[i];
+            }
 
             return UWOT_SUCCESS;
 
@@ -2154,10 +2199,8 @@ extern "C" {
                 bool exact_match_found = false;
                 int exact_match_idx = -1;
 
-                // FIX #2: Much stricter exact match threshold for high dimensions
-                // Use a more conservative scaling for high-dimensional spaces
-                float match_threshold = 1e-6f * std::pow(static_cast<float>(n_dim), 0.3f);
-                // For n_dim=350, this gives ~1e-6 * 5.5 = 0.0000055 (much stricter than before)
+                // Fix 3: Use model's precomputed exact match threshold
+                float match_threshold = model->exact_match_threshold;
 
                 // Extract neighbors and compute detailed statistics
                 while (!search_result.empty()) {
@@ -2189,10 +2232,10 @@ extern "C" {
                         exact_match_idx = neighbor_idx;
                     }
 
-                    // FIX #3: Adjust bandwidth calculation for high min_dist
-                    // Use a more conservative approach for high min_dist
-                    float base_bandwidth = std::max(model->min_dist * 0.25f, model->mean_neighbor_distance * 0.5f);
-                    // For min_dist=0.54, this ensures base_bandwidth is at least 0.135
+                    // Fix 4: Base bandwidth on neighbor distances only (remove min_dist dependency)
+                    float eps = 1e-6f;
+                    float median_neighbor_dist = model->median_neighbor_distance > 0.0f ? model->median_neighbor_distance : model->mean_neighbor_distance;
+                    float base_bandwidth = std::max(1e-4f, 0.5f * median_neighbor_dist);
 
                     // For very distant points, increase bandwidth to prevent total weight collapse
                     float adaptive_bandwidth = base_bandwidth;
@@ -2202,8 +2245,8 @@ extern "C" {
 
                     float weight = std::exp(-distance * distance / (2.0f * adaptive_bandwidth * adaptive_bandwidth));
 
-                    // Ensure minimum weight to prevent zeros (more aggressive for large-scale)
-                    weight = std::max(weight, 0.01f);
+                    // Fix 2: Minimal weight floor to preserve distance sensitivity
+                    weight = std::max(weight, 1e-6f);
 
                     neighbors.push_back(neighbor_idx);
                     distances.push_back(distance);
@@ -2224,11 +2267,12 @@ extern "C" {
                     float min_distance = *std::min_element(distances.begin(), distances.end());
                     float mean_distance = std::accumulate(distances.begin(), distances.end(), 0.0f) / distances.size();
 
-                    // Confidence score (inverse of normalized distance)
+                    // Fix 5: Confidence score with robust denominator guard
                     if (confidence_score) {
-                        float normalized_dist = (min_distance - model->min_neighbor_distance) /
-                            (model->p95_neighbor_distance - model->min_neighbor_distance + 1e-8f);
-                        confidence_score[i] = std::max(0.0f, std::min(1.0f, 1.0f - normalized_dist));
+                        const float EPS = 1e-8f;
+                        float denom = std::max(EPS, model->p95_neighbor_distance - model->min_neighbor_distance);
+                        float normalized_dist = (min_distance - model->min_neighbor_distance) / denom;
+                        confidence_score[i] = std::clamp(1.0f - normalized_dist, 0.0f, 1.0f);
                     }
 
                     // Outlier level assessment
@@ -2250,8 +2294,9 @@ extern "C" {
                         }
                     }
 
-                    // Percentile rank (0-100)
+                    // Fix 5: Percentile rank with guarded denominators
                     if (percentile_rank) {
+                        const float EPS = 1e-8f;
                         if (min_distance <= model->min_neighbor_distance) {
                             percentile_rank[i] = 0.0f;
                         }
@@ -2259,21 +2304,22 @@ extern "C" {
                             percentile_rank[i] = 99.0f;
                         }
                         else {
-                            // Linear interpolation between key percentiles
-                            float p95_range = model->p95_neighbor_distance - model->min_neighbor_distance;
+                            float p95_range = std::max(EPS, model->p95_neighbor_distance - model->min_neighbor_distance);
                             if (min_distance <= model->p95_neighbor_distance) {
-                                percentile_rank[i] = 95.0f * (min_distance - model->min_neighbor_distance) / (p95_range + 1e-8f);
+                                percentile_rank[i] = 95.0f * (min_distance - model->min_neighbor_distance) / p95_range;
                             }
                             else {
-                                float p99_range = model->p99_neighbor_distance - model->p95_neighbor_distance;
-                                percentile_rank[i] = 95.0f + 4.0f * (min_distance - model->p95_neighbor_distance) / (p99_range + 1e-8f);
+                                float p99_range = std::max(EPS, model->p99_neighbor_distance - model->p95_neighbor_distance);
+                                percentile_rank[i] = 95.0f + 4.0f * (min_distance - model->p95_neighbor_distance) / p99_range;
                             }
                         }
                     }
 
-                    // Z-score relative to training data
+                    // Fix 5: Z-score with robust denominator guard
                     if (z_score) {
-                        z_score[i] = (min_distance - model->mean_neighbor_distance) / (model->std_neighbor_distance + 1e-8f);
+                        const float EPS = 1e-8f;
+                        float denom_z = std::max(EPS, model->std_neighbor_distance);
+                        z_score[i] = (min_distance - model->mean_neighbor_distance) / denom_z;
                     }
                 }
 
@@ -2303,9 +2349,14 @@ extern "C" {
                 }
             }
 
-            // Copy embedding result to output
-            std::memcpy(embedding, new_embedding.data(),
-                static_cast<size_t>(n_new_obs) * static_cast<size_t>(model->embedding_dim) * sizeof(float));
+            // Fix 6: Bounds-checked element-wise copy instead of unsafe memcpy
+            size_t expected = static_cast<size_t>(n_new_obs) * static_cast<size_t>(model->embedding_dim);
+            if (new_embedding.size() < expected) {
+                return UWOT_ERROR_MEMORY;
+            }
+            for (size_t i = 0; i < expected; ++i) {
+                embedding[i] = new_embedding[i];
+            }
 
             return UWOT_SUCCESS;
 
@@ -2384,6 +2435,10 @@ extern "C" {
             file.write(reinterpret_cast<const char*>(&model->p99_neighbor_distance), sizeof(float));
             file.write(reinterpret_cast<const char*>(&model->mild_outlier_threshold), sizeof(float));
             file.write(reinterpret_cast<const char*>(&model->extreme_outlier_threshold), sizeof(float));
+
+            // Fix 7: Save new fields for robust threshold and bandwidth calculations
+            file.write(reinterpret_cast<const char*>(&model->median_neighbor_distance), sizeof(float));
+            file.write(reinterpret_cast<const char*>(&model->exact_match_threshold), sizeof(float));
 
             // Write embedding
             size_t embedding_size = model->embedding.size();
@@ -2532,6 +2587,10 @@ extern "C" {
             file.read(reinterpret_cast<char*>(&model->p99_neighbor_distance), sizeof(float));
             file.read(reinterpret_cast<char*>(&model->mild_outlier_threshold), sizeof(float));
             file.read(reinterpret_cast<char*>(&model->extreme_outlier_threshold), sizeof(float));
+
+            // Fix 7: Load new fields for robust threshold and bandwidth calculations
+            file.read(reinterpret_cast<char*>(&model->median_neighbor_distance), sizeof(float));
+            file.read(reinterpret_cast<char*>(&model->exact_match_threshold), sizeof(float));
 
             // Read embedding
             size_t embedding_size;
