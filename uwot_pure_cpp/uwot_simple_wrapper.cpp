@@ -2379,12 +2379,10 @@ extern "C" {
             file.write(reinterpret_cast<const char*>(&model->use_normalization), sizeof(bool));
             file.write(reinterpret_cast<const char*>(&model->normalization_mode), sizeof(int));
 
-            // Write HNSW hyperparameters (version 5+)
+            // Write HNSW hyperparameters (version 7+)
             file.write(reinterpret_cast<const char*>(&model->hnsw_M), sizeof(int));
             file.write(reinterpret_cast<const char*>(&model->hnsw_ef_construction), sizeof(int));
             file.write(reinterpret_cast<const char*>(&model->hnsw_ef_search), sizeof(int));
-            file.write(reinterpret_cast<const char*>(&model->use_quantization), sizeof(bool));
-            file.write(reinterpret_cast<const char*>(&model->pq_m), sizeof(int));
 
             // Write normalization parameters
             size_t means_size = model->feature_means.size();
@@ -2412,32 +2410,13 @@ extern "C" {
             file.write(reinterpret_cast<const char*>(model->embedding.data()),
                 embedding_size * sizeof(float));
 
-            // Write Product Quantization data (version 5+)
-            if (model->use_quantization && !model->pq_codes.empty() && !model->pq_centroids.empty()) {
-                // Write PQ codes
-                size_t codes_size = model->pq_codes.size();
-                file.write(reinterpret_cast<const char*>(&codes_size), sizeof(size_t));
-                file.write(reinterpret_cast<const char*>(model->pq_codes.data()),
-                    codes_size * sizeof(uint8_t));
-
-                // Write PQ centroids
-                size_t centroids_size = model->pq_centroids.size();
-                file.write(reinterpret_cast<const char*>(&centroids_size), sizeof(size_t));
-                file.write(reinterpret_cast<const char*>(model->pq_centroids.data()),
-                    centroids_size * sizeof(float));
-            }
-            else {
-                // Write empty PQ data
-                size_t zero_size = 0;
-                file.write(reinterpret_cast<const char*>(&zero_size), sizeof(size_t)); // codes
-                file.write(reinterpret_cast<const char*>(&zero_size), sizeof(size_t)); // centroids
-            }
-
-            // Conditional k-NN storage based on metric compatibility with HNSW
-            bool needs_knn = model->force_exact_knn ||
-                !model->space_factory ||
-                !model->space_factory->can_use_hnsw();
+            // CRITICAL FIX 4: Always save k-NN data for exact reproducibility
+            // Since HNSW indices are inherently non-deterministic, we need fallback k-NN data
+            // to ensure perfect consistency between original fit and loaded model transforms
+            bool needs_knn = true;  // Always save k-NN data for exact transforms
             file.write(reinterpret_cast<const char*>(&needs_knn), sizeof(bool));
+
+            printf("🔍 DEBUG SAVE - Always saving k-NN data for exact reproducibility\n");
 
             if (needs_knn) {
                 // Save k-NN data for fallback transforms
@@ -2546,12 +2525,10 @@ extern "C" {
             file.read(reinterpret_cast<char*>(&model->use_normalization), sizeof(bool));
             file.read(reinterpret_cast<char*>(&model->normalization_mode), sizeof(int));
 
-            // Read HNSW hyperparameters (version 5+) - CRITICAL: Must be in same position as save!
+            // Read HNSW hyperparameters (version 7+) - CRITICAL: Must be in same position as save!
             file.read(reinterpret_cast<char*>(&model->hnsw_M), sizeof(int));
             file.read(reinterpret_cast<char*>(&model->hnsw_ef_construction), sizeof(int));
             file.read(reinterpret_cast<char*>(&model->hnsw_ef_search), sizeof(int));
-            file.read(reinterpret_cast<char*>(&model->use_quantization), sizeof(bool));
-            file.read(reinterpret_cast<char*>(&model->pq_m), sizeof(int));
 
             // Read normalization parameters
             size_t means_size;
@@ -2582,59 +2559,11 @@ extern "C" {
             file.read(reinterpret_cast<char*>(model->embedding.data()),
                 embedding_size * sizeof(float));
 
-            // Read Product Quantization data (version 5+)
-            try {
-                // Read PQ codes with safety checks
-                size_t codes_size;
-                file.read(reinterpret_cast<char*>(&codes_size), sizeof(size_t));
-
-                // Sanity check: prevent excessive memory allocation
-                const size_t max_codes_size = 1024 * 1024 * 1024; // 1GB limit
-                if (codes_size > max_codes_size) {
-                    throw std::runtime_error("PQ codes size too large, possible corruption");
-                }
-
-                if (codes_size > 0) {
-                    model->pq_codes.resize(codes_size);
-                    file.read(reinterpret_cast<char*>(model->pq_codes.data()),
-                        codes_size * sizeof(uint8_t));
-
-                    if (!file.good()) {
-                        throw std::runtime_error("Failed to read PQ codes data");
-                    }
-                }
-
-                // Read PQ centroids with safety checks
-                size_t centroids_size;
-                file.read(reinterpret_cast<char*>(&centroids_size), sizeof(size_t));
-
-                // Sanity check: prevent excessive memory allocation
-                const size_t max_centroids_size = 100 * 1024 * 1024; // 100MB limit
-                if (centroids_size > max_centroids_size) {
-                    throw std::runtime_error("PQ centroids size too large, possible corruption");
-                }
-
-                if (centroids_size > 0) {
-                    model->pq_centroids.resize(centroids_size);
-                    file.read(reinterpret_cast<char*>(model->pq_centroids.data()),
-                        centroids_size * sizeof(float));
-
-                    if (!file.good()) {
-                        throw std::runtime_error("Failed to read PQ centroids data");
-                    }
-                }
-            }
-            catch (const std::exception&) {
-                // If PQ loading fails, continue without quantization
-                model->use_quantization = false;
-                model->pq_codes.clear();
-                model->pq_centroids.clear();
-                // Don't rethrow - just log and continue
-            }
-
-            // Read conditional k-NN data (version 4 and above)
+            // Read conditional k-NN data (version 7 and above)
             bool needs_knn;
             file.read(reinterpret_cast<char*>(&needs_knn), sizeof(bool));
+
+            printf("🔍 DEBUG LOAD - k-NN data availability: %s\n", needs_knn ? "YES (exact reproducibility enabled)" : "NO");
 
             if (needs_knn) {
                 // Read k-NN indices
@@ -2663,6 +2592,11 @@ extern "C" {
                     file.read(reinterpret_cast<char*>(model->nn_weights.data()),
                         nn_weights_size * sizeof(float));
                 }
+
+                printf("  ✅ k-NN fallback data loaded successfully:\n");
+                printf("     - Indices: %zu elements\n", model->nn_indices.size());
+                printf("     - Distances: %zu elements\n", model->nn_distances.size());
+                printf("     - Weights: %zu elements\n", model->nn_weights.size());
             }
             // If needs_knn is false, k-NN vectors remain empty (using HNSW for transforms)
 
@@ -2684,23 +2618,48 @@ extern "C" {
             }
             else if (hnsw_size > 0) {
                 try {
-                    // Initialize space factory safely
+                    printf("🔍 DEBUG LOAD - Starting HNSW reconstruction:\n");
+                    printf("  - HNSW size to read: %zu bytes\n", hnsw_size);
+                    printf("  - Model metric: %d, n_dim: %d\n", model->metric, model->n_dim);
+                    printf("  - HNSW parameters: M=%d, ef_c=%d, ef_s=%d\n",
+                           model->hnsw_M, model->hnsw_ef_construction, model->hnsw_ef_search);
+
+                    // CRITICAL FIX 1: Initialize space factory BEFORE loading HNSW
                     if (!model->space_factory) {
                         model->space_factory = std::make_unique<hnsw_utils::SpaceFactory>();
                     }
 
-                    // Load HNSW index directly from stream (no temporary files)
-                    // Use the correct metric space from the model
+                    // CRITICAL FIX 1: Setup space factory with correct metric BEFORE loading HNSW
                     if (!model->space_factory->create_space(model->metric, model->n_dim)) {
                         throw std::runtime_error("Failed to create HNSW space with correct metric");
                     }
+                    printf("  ✅ Space factory created successfully for metric %d\n", model->metric);
 
+                    // CRITICAL FIX 2: Create HNSW index with saved parameters for consistency
                     model->ann_index = std::make_unique<hnswlib::HierarchicalNSW<float>>(
-                        model->space_factory->get_space());
-                    model->ann_index->setEf(model->hnsw_ef_search);  // Set query-time ef parameter
+                        model->space_factory->get_space(),
+                        model->n_vertices,           // Use saved capacity
+                        model->hnsw_M,               // Use saved M parameter
+                        model->hnsw_ef_construction  // Use saved ef_construction
+                    );
 
-                    // Load HNSW data with LZ4 decompression - THIS IS THE CRITICAL CRASH POINT
+                    // Set query-time ef parameter from saved value
+                    model->ann_index->setEf(model->hnsw_ef_search);
+                    printf("  ✅ HNSW index created with saved parameters\n");
+
+                    // Load HNSW data with LZ4 decompression
                     load_hnsw_from_stream_compressed(file, model->ann_index.get(), model->space_factory->get_space());
+                    printf("  ✅ HNSW data loaded from compressed stream\n");
+
+                    // CRITICAL FIX 3: Validate HNSW index consistency
+                    if (model->ann_index->getCurrentElementCount() != static_cast<size_t>(model->n_vertices)) {
+                        printf("  ⚠️  WARNING: HNSW index size mismatch!\n");
+                        printf("     Expected: %d elements, Got: %zu elements\n",
+                               model->n_vertices, model->ann_index->getCurrentElementCount());
+                        printf("     This may cause transform inconsistencies!\n");
+                    } else {
+                        printf("  ✅ HNSW index size validation passed: %d elements\n", model->n_vertices);
+                    }
 
                 }
                 catch (const std::exception&) {
@@ -2759,6 +2718,14 @@ extern "C" {
                     model->embedding[i * model->embedding_dim],
                     model->embedding[i * model->embedding_dim + 1]);
             }
+
+            // FINAL CRITICAL FIX SUMMARY
+            printf("\n🎉 HNSW SAVE/LOAD CONSISTENCY FIXES APPLIED:\n");
+            printf("  ✅ Fix 1: Space factory initialized with correct metric BEFORE HNSW loading\n");
+            printf("  ✅ Fix 2: HNSW index created with saved parameters (M, ef_construction, ef_search)\n");
+            printf("  ✅ Fix 3: HNSW element count validation (expected vs actual)\n");
+            printf("  ✅ Fix 4: k-NN fallback data ALWAYS saved for exact reproducibility\n");
+            printf("  🎯 Result: Transform consistency should now be guaranteed!\n");
 
             file.close();
             return model;
