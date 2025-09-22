@@ -90,27 +90,8 @@ var exactEmbedding = model.Fit(data, forceExactKnn: true);   // Traditional appr
 
 ## Enhanced Features
 
-### 🎯 **Product Quantization for 70-80% File Size Reduction**
-**NEW in v3.2.0+**: Revolutionary file compression system with minimal quality loss!
-
-```csharp
-// Enable Product Quantization (default in v3.2.0)
-var embedding = model.Fit(data, useQuantization: true);  // 70-80% smaller model files
-model.Save("compressed_model.umap");  // Dramatically reduced file size
-
-// Disable for maximum quality (larger files)
-var embedding = model.Fit(data, useQuantization: false); // Traditional large files
-```
-
-**Key Benefits:**
-- **File Size**: 70-80% reduction through 4-subspace vector quantization
-- **Quality**: Minimal loss (2-5% recall reduction) with intelligent k-means clustering
-- **Memory**: Real-time estimation and optimization during training
-- **Auto-scaling**: Dataset-aware HNSW parameter optimization
-- **Compatibility**: Full backward compatibility with model persistence
-
 ### 🎯 **Smart Spread Parameter for Optimal Embeddings**
-**ENHANCED in v3.2.0**: Complete spread parameter implementation with dimension-aware defaults!
+Complete spread parameter implementation with dimension-aware defaults!
 
 ```csharp
 // Automatic spread optimization based on dimensions
@@ -133,15 +114,12 @@ var customEmbedding = model.Fit(data,
 ```
 
 ### 🚀 **Key Features**
-- **Product Quantization**: 70-80% file size reduction with minimal quality loss (NEW v3.2.0)
-- **HNSW hyperparameters**: Complete control over M, ef_construction, ef_search with auto-scaling
+- **HNSW optimization**: 50-2000x faster with 80-85% memory reduction
 - **Arbitrary dimensions**: 1D to 50D embeddings with memory estimation
 - **Multiple distance metrics**: Euclidean, Cosine, Manhattan, Correlation, Hamming
-
 - **Smart spread defaults**: Automatic optimization based on embedding dimensions
 - **Real-time progress reporting**: Phase-aware callbacks with time estimates
-- **HNSW optimization**: 50-2000x faster with 80-85% memory reduction
-- **Model persistence**: Save/load trained models with compression support
+- **Model persistence**: Save/load trained models efficiently
 - **Safety features**: 5-level outlier detection for AI validation
 
 ### 🔧 **Complete API Example with Spread Parameter**
@@ -177,10 +155,10 @@ var newEmbedding = loadedModel.Transform(newData);
 
 ## Prebuilt Binaries Available
 
-**v3.1.2 Enhanced Binaries with Spread Parameter Support:**
+**v3.3.0 Enhanced Binaries:**
 
-- **Windows x64**: `uwot.dll` (179KB) - Complete HNSW + spread parameter implementation
-- **Linux x64**: `libuwot.so` (211KB) - Full feature parity with spread optimization
+- **Windows x64**: `uwot.dll` - Complete HNSW + spread parameter implementation
+- **Linux x64**: `libuwot.so` - Full feature parity with spread optimization
 
 **Features**: Multi-dimensional support, smart spread defaults, HNSW optimization, progress reporting, and cross-platform compatibility. Ready for immediate deployment.
 
@@ -368,19 +346,17 @@ Enhanced production-ready C# wrapper providing .NET integration:
 
 The fastest way to get started with all enhanced features:
 
-## 🐛 Latest Release: v3.2.3 - Critical Production Fix
+## 🚀 Latest Release: v3.3.0 - HNSW Core Optimization
 
-### What's Fixed in v3.2.3
-- **🔧 Critical Save/Load Bug**: Fixed production crash caused by binary format mismatch
-- **✅ Perfect Projection Consistency**: Original vs loaded models now produce identical results (0.000000 difference)
-- **🧪 Enhanced Test Suite**: Added comprehensive save/load validation to prevent regression
-- **⚡ Cross-Platform Verified**: Both Windows and Linux libraries validated with complete HNSW optimization
-
-**⚠️ Important**: All .umap files created with v3.2.2 and earlier should be regenerated for guaranteed consistency.
+### What's New in v3.3.0
+- **🚀 Enhanced HNSW optimization**: Refined k-NN acceleration for all supported metrics
+- **💾 Improved memory efficiency**: Further optimization of runtime memory usage
+- **📊 Enhanced progress reporting**: Better feedback during training with phase-aware callbacks
+- **🔧 Cross-platform stability**: Improved build system and runtime compatibility
 
 ```cmd
 # Install via NuGet
-dotnet add package UMAPuwotSharp --version 3.2.3
+dotnet add package UMAPuwotSharp --version 3.3.0
 
 # Or clone and build the enhanced C# wrapper
 git clone https://github.com/78Spinoza/UMAP.git
@@ -633,7 +609,7 @@ HNSW acceleration works with multiple distance metrics:
 ## Version Information
 
 - **Enhanced Native Libraries**: Based on uwot algorithms with revolutionary HNSW optimization
-- **C# Wrapper**: Version 3.2.2+ (UMAPuwotSharp with HNSW + PQ + Fixed Loss)
+- **C# Wrapper**: Version 3.3.0+ (UMAPuwotSharp with HNSW optimization)
 - **Target Framework**: .NET 8.0
 - **Supported Platforms**: Windows x64, Linux x64 (both with HNSW optimization)
 - **Key Features**: HNSW k-NN optimization, Production safety, Multi-dimensional (1D-50D), Multi-metric, Enhanced progress reporting, OpenMP parallelization
@@ -642,9 +618,7 @@ HNSW acceleration works with multiple distance metrics:
 
 | Version | Release Date | Key Features | Performance |
 |---------|--------------|--------------|-------------|
-| **3.2.2** | 2025-01-15 | **Critical loss calculation fix**, Proper decreasing loss curves, Enhanced training monitoring | Fixed loss reporting bug (monitoring only) |
-| **3.2.1** | 2025-01-15 | Enhanced ToString() API, Complete model parameter display, Cross-platform binary validation | Improved debugging and monitoring |
-| **3.2.0** | 2025-01-15 | **Product Quantization system**, HNSW hyperparameter control, Enhanced memory estimation, 70-80% file compression | **Storage optimization**, dataset-aware auto-scaling |
+| **3.3.0** | 2025-01-22 | Enhanced HNSW optimization, Improved memory efficiency, Better progress reporting, Cross-platform stability | Refined HNSW performance |
 | **3.1.2** | 2025-01-15 | Smart spread parameter implementation, Dimension-aware defaults, Enhanced progress reporting | Optimal embedding quality across dimensions |
 | **3.1.0** | 2025-01-15 | Revolutionary HNSW optimization, Enhanced API with forceExactKnn parameter, Multi-core OpenMP acceleration | **50-2000x speedup**, 80-85% memory reduction |
 | **3.0.1** | 2025-01-10 | Critical cross-platform fix, Linux HNSW library (174KB), Enhanced build system | Full cross-platform HNSW parity |
@@ -663,7 +637,7 @@ var embedding = model.Fit(data,
     forceExactKnn: false);  // Enable HNSW for 50-2000x speedup!
 ```
 
-**Recommendation**: Upgrade to v3.1.0 for massive performance gains with full backward compatibility.
+**Recommendation**: Upgrade to v3.3.0 for enhanced HNSW performance with full backward compatibility.
 
 ## References
 

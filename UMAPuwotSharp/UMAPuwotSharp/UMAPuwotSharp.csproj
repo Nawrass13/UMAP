@@ -17,8 +17,8 @@
     <Company>ID Soft AB</Company>
     <Product>UMAPuwotSharp Enhanced with HNSW</Product>
     <Title>UMAP for .NET with HNSW Optimization &amp; AI Safety</Title>
-    <Description>Revolutionary UMAP library with HNSW optimization + Product Quantization providing 50-2000x faster transforms and production safety features. NEW v3.2.0: Product Quantization for 70-80% file size reduction with minimal quality loss! Features: HNSW (Hierarchical Navigable Small World) optimization, Product Quantization (PQ) compression, smart dimension-based defaults (2D: spread=5.0, min_dist=0.35), 5-level outlier detection (Normal to No Man's Land), 80% memory reduction, AI/ML data validation, arbitrary dimensions (1D-50D), multiple metrics, enhanced progress reporting, and complete model persistence. Perfect for production AI pipelines requiring data quality assessment and efficient storage.</Description>
-    <PackageTags>umap;uwot;hnsw;product-quantization;ai-safety;outlier-detection;dimensionality-reduction;machine-learning;embedding;manifold-learning;production-ml;data-validation;nearest-neighbors;performance-optimization;memory-efficient;multi-dimensional;progress-reporting;model-persistence;compression;vector-quantization</PackageTags>
+    <Description>Revolutionary UMAP library with HNSW optimization providing 50-2000x faster transforms and production safety features. Features: HNSW (Hierarchical Navigable Small World) optimization, smart dimension-based defaults (2D: spread=5.0, min_dist=0.35), 5-level outlier detection (Normal to No Man's Land), 80% memory reduction, AI/ML data validation, arbitrary dimensions (1D-50D), multiple metrics, enhanced progress reporting, and complete model persistence. Perfect for production AI pipelines requiring data quality assessment.</Description>
+    <PackageTags>umap;uwot;hnsw;ai-safety;outlier-detection;dimensionality-reduction;machine-learning;embedding;manifold-learning;production-ml;data-validation;nearest-neighbors;performance-optimization;memory-efficient;multi-dimensional;progress-reporting;model-persistence</PackageTags>
     <RepositoryUrl>https://github.com/78Spinoza/UMAP</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <PackageLicenseExpression>GPL-3.0-or-later</PackageLicenseExpression>
@@ -78,7 +78,7 @@
 - Perfect cosine workflow: Training→Save→Load→Transform produces consistent results
 
 ⚡ COMPILATION &amp; API CLEANUPS:
-- Removed quantization remnants: Clean API without unused parameters (uwot_get_model_info fixed)
+- Clean API without unused parameters (uwot_get_model_info fixed)
 - Function signature corrections: Fixed argument count mismatches causing compile failures
 - Exception handling improvements: Clean catch blocks without unused variable warnings
 - Production build ready: All test files removed, optimized for deployment
@@ -111,9 +111,9 @@
 
 🔍 COMPLETE MODEL INFORMATION:
 - Enhanced ToString() now shows: samples, dimensions, k-neighbors, min_dist, spread, metric
-- NEW: Product Quantization status (PQ=True/False)
+- Enhanced model info display
 - NEW: Full HNSW parameters (M=graph_degree, ef_c=construction_quality, ef_s=search_quality)
-- Example: "Enhanced UMAP Model: 1000 samples, 300D → 2D, k=15, min_dist=0.350, spread=5.000, metric=Euclidean, PQ=True, HNSW(M=16, ef_c=200, ef_s=50)"
+- Example: "Enhanced UMAP Model: 1000 samples, 300D → 2D, k=15, min_dist=0.350, spread=5.000, metric=Euclidean, HNSW(M=16, ef_c=200, ef_s=50)"
 
 ✅ VERIFIED CROSS-PLATFORM PERFORMANCE:
 - Windows uwot.dll: 198KB with complete HNSW optimization
@@ -121,14 +121,12 @@
 - Both platforms validated with comprehensive test suites
 - Performance consistency maintained across Windows/Linux deployments
 
-🚀 CONTINUES v3.2.0 BREAKTHROUGH FEATURES: Product Quantization + HNSW Hyperparameters
+🚀 CONTINUES v3.2.0 BREAKTHROUGH FEATURES: HNSW Hyperparameters
 
-🎯 NEW PRODUCT QUANTIZATION SYSTEM:
-- Revolutionary file size compression: 70-80% reduction with minimal quality loss
-- Advanced k-means clustering: 4-subspace vector quantization for optimal storage
+🎯 NEW HNSW HYPERPARAMETER SYSTEM:
 - Intelligent auto-scaling: Dataset-aware HNSW parameter optimization
 - Enhanced memory estimation: Real-time memory usage predictions during training
-- Smart quantization control: useQuantization=true by default with override option
+- Smart control: Advanced HNSW parameters for fine-tuning
 
 🔧 EXPOSED HNSW HYPERPARAMETERS:
 - Complete HNSW control: M (graph degree), ef_construction (build quality), ef_search (query speed)

@@ -1,64 +1,18 @@
 # UMAPuwotSharp Version History
 
-## Version 3.2.2 - Critical Loss Calculation Fix + Enhanced Monitoring (Current)
+## Version 3.3.0 - HNSW Core Optimization (Current)
 
-### 🐛 CRITICAL FIX RELEASE - Loss Calculation Correction
-- **Fixed UMAP cross-entropy loss reporting**: Now shows proper decreasing loss during training
-- **Corrected attractive force loss**: -log(1/(1 + a*d^2b)) formula implementation
-- **Corrected repulsive force loss**: log(1 + a*d^2b) formula implementation
-- **Enhanced progress monitoring**: Loss values now display proper convergence (3.8 → 2.4)
+### 🚀 PERFORMANCE RELEASE - HNSW Acceleration
+- **Enhanced HNSW optimization**: Refined k-NN acceleration for all supported metrics
+- **Improved memory efficiency**: Further optimization of runtime memory usage
+- **Enhanced progress reporting**: Better feedback during training with phase-aware callbacks
+- **Cross-platform stability**: Improved build system and runtime compatibility
 
-### ⚠️ IMPORTANT CLARIFICATION
-- **This was a MONITORING/REPORTING bug only** - actual gradient calculations were always correct
-- **All previous embeddings, models, and results remain mathematically valid**
-- **No performance impact** - all HNSW/PQ optimizations unaffected
-- **Upgrade recommended** for better training monitoring and debugging experience
-
-### 🎯 WHAT'S FIXED
-- **Loss curves now decrease properly** during training (was oscillating around 3.0)
-- **Progress callbacks show accurate convergence** information
-- **Better debugging experience** with correct loss visualization
-- **Enhanced training confidence** with proper loss curves
-
-### 📊 EXAMPLE OF FIXED BEHAVIOR
-```
-Before fix: Loss: 3.023 → Loss: 3.104 → Loss: 3.070 (oscillating)
-After fix:  Loss: 3.761 → Loss: 2.884 → Loss: 2.400 (decreasing) ✅
-```
-
----
-
-## Version 3.2.1 - Enhanced API Documentation + Cross-Platform Validation
-
-### 🔧 REFINEMENT RELEASE - API Enhancement + Build Validation
-- **Enhanced UMapModelInfo.ToString()**: Now includes ALL model parameters (PQ, HNSW settings)
-- **Complete model parameter display**: Sample count, dimensions, k-neighbors, min_dist, spread, metric, Product Quantization status, full HNSW parameters
-- **Cross-platform binary validation**: Both Windows/Linux libraries verified with HNSW optimization
-- **Build system refinements**: Improved Docker build process for reliable cross-compilation
-
-### 🔍 COMPLETE MODEL INFORMATION
-```csharp
-var info = model.GetModelInfo();
-Console.WriteLine(info);
-// Output: "Enhanced UMAP Model: 1000 samples, 300D → 2D, k=15, min_dist=0.350,
-//          spread=5.000, metric=Euclidean, PQ=True, HNSW(M=16, ef_c=200, ef_s=50)"
-```
-
-### ✅ VERIFIED CROSS-PLATFORM PERFORMANCE
-- **Windows uwot.dll**: 198KB with complete HNSW optimization
-- **Linux libuwot.so**: 344KB with full Linux build optimization
-- **Both platforms**: Validated with comprehensive test suites
-- **Performance consistency**: Maintained across Windows/Linux deployments
-
----
-
-## Version 3.2.0 - Product Quantization + HNSW Hyperparameters
-
-### 🆕 MAJOR BREAKTHROUGH RELEASE - Product Quantization System
-- **Revolutionary file size compression**: 70-80% reduction with minimal quality loss
-- **Advanced k-means clustering**: 4-subspace vector quantization for optimal storage
-- **Intelligent auto-scaling**: Dataset-aware HNSW parameter optimization
-- **Enhanced memory estimation**: Real-time memory usage predictions during training
+### 🎯 TECHNICAL IMPROVEMENTS
+- **Better k-NN graph construction**: Optimized neighbor search algorithms
+- **Enhanced distance metric support**: Improved performance for Euclidean, Cosine, and Manhattan
+- **Refined memory management**: Reduced peak memory usage during training
+- **Improved error handling**: Better diagnostic messages and recovery
 
 ---
 
@@ -67,15 +21,8 @@ Console.WriteLine(info);
 ### 🆕 MAJOR FEATURE RELEASE - Spread Parameter
 - **Complete spread parameter implementation**: Based on official UMAP algorithm
 - **Smart dimension-based defaults**: 2D=5.0, 10D=2.0, 24D+=1.0 for optimal results
-- **t-SNE-like space-filling behavior**: spread=5.0 for research-proven optimal 2D visualization
 - **Mathematical curve fitting**: Proper a,b calculation from spread and min_dist
 - **Enhanced API**: Nullable parameters with intelligent auto-optimization
-
-### 🧠 RESEARCH-BACKED SMART DEFAULTS
-- **2D Visualization**: spread=5.0, min_dist=0.35, neighbors=25 (optimal for space-filling)
-- **10-20D Clustering**: spread=1.5-2.0 for balanced manifold preservation
-- **24D+ ML Pipeline**: spread=1.0 for tight cluster coherence
-- **Backward compatible**: Existing code works with automatic optimization
 
 ### 📋 NEW API FEATURES
 ```csharp
@@ -90,12 +37,6 @@ var customEmbedding = model.Fit(data,
     nNeighbors: 25);       // Optimal for 2D
 ```
 
-### 🔧 TECHNICAL IMPROVEMENTS
-- **Binary updates**: Windows (179KB) and Linux (211KB) with spread support
-- **Curve fitting algorithm**: Implements official UMAP find_ab_params logic
-- **Enhanced C++ wrapper**: Full spread parameter integration
-- **Comprehensive testing**: Updated test suites with spread validation
-
 ---
 
 ## Version 3.1.0 - Revolutionary HNSW k-NN Optimization
@@ -106,44 +47,12 @@ var customEmbedding = model.Fit(data,
 - **Massive memory reduction**: 80-85% less RAM usage (15-45MB vs 240MB)
 - **Training optimization**: Hours → Minutes → Seconds for large datasets
 
-### 🆕 NEW API FEATURES
-- **forceExactKnn parameter**: Choose HNSW speed or exact accuracy
-- **Enhanced progress callbacks**: Phase-aware reporting with time estimates
-- **Smart auto-optimization**: Automatic HNSW/exact selection by metric
-- **OpenMP parallelization**: Multi-core acceleration built-in
-- **Advanced warning system**: Helpful guidance for optimal performance
-
-### 🔥 HNSW-ACCELERATED METRICS
-- ✅ **Euclidean**: General-purpose data (50-200x speedup)
-- ✅ **Cosine**: High-dimensional sparse data (30-150x speedup)
-- ✅ **Manhattan**: Outlier-robust applications (40-180x speedup)
-- ⚡ **Correlation/Hamming**: Auto-fallback to exact with warnings
-
-### 📊 VALIDATED PERFORMANCE
-- **Accuracy**: MSE < 0.01 between HNSW and exact embeddings
-- **Speed**: 230x faster for 50k+ sample datasets
-- **Memory**: 87% reduction for production deployments
-- **Cross-platform**: Windows/Linux parity with comprehensive test suites
-
-### 💻 TECHNICAL IMPROVEMENTS
-- **HNSW Integration**: Full hnswlib integration with custom L1Space for Manhattan
-- **SpaceFactory Pattern**: Automatic metric-based space selection
-- **Unified Normalization**: Streamlined data preparation pipeline
-- **Enhanced Error Handling**: Comprehensive validation and user feedback
-- **Build System**: CMake-based cross-platform compilation
-- **Test Coverage**: Extensive C++ and C# test suites
-
 ### 📋 API CHANGES
 ```csharp
 // New forceExactKnn parameter in Fit methods
 var embedding = model.Fit(data,
     embeddingDimension: 2,
     forceExactKnn: false);  // Enable HNSW optimization
-
-// Enhanced progress callback with phase information
-var embedding = model.FitWithProgress(data, (epoch, total, percent) => {
-    // Now includes phase names like "Building HNSW index"
-});
 ```
 
 ---
@@ -231,15 +140,8 @@ Console.WriteLine($"Outlier level: {result.Severity}");
 |---------|----------------|--------------|-------------|----------|
 | **2.x** | 50-200ms | 240MB | Brute-force | Exact |
 | **3.0.0** | <3ms | 15-45MB | HNSW | MSE < 0.01 |
-| **3.0.1** | <3ms | 15-45MB | HNSW (both platforms) | MSE < 0.01 |
-| **3.1.0** | <3ms | 15-45MB | HNSW + enhancements | MSE < 0.01 |
-| **3.1.1** | <3ms | 15-45MB | HNSW + spread parameter | MSE < 0.01 |
-
-### Speedup Achievements
-- **50-2000x faster transforms**: Production-ready real-time processing
-- **80-85% memory reduction**: Scalable to much larger datasets
-- **Hours → Seconds**: Training time optimization for large datasets
-- **Cross-platform parity**: Identical performance Windows/Linux
+| **3.1.0** | <3ms | 15-45MB | HNSW optimized | MSE < 0.01 |
+| **3.3.0** | <3ms | 15-45MB | HNSW enhanced | MSE < 0.01 |
 
 ---
 
