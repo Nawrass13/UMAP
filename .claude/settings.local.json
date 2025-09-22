@@ -77,7 +77,8 @@
       "Bash(\"C:\\Program Files\\Microsoft Visual Studio\\2022\\Professional\\VC\\Tools\\MSVC\\14.44.35207\\bin\\Hostx64\\x64\\cl.exe\" /I\"uwot_pure_cpp\" debug_save_error.cpp uwot_pure_cpp/uwot_simple_wrapper.cpp uwot_pure_cpp/lz4.c /Fe:debug_save_error.exe /std:c++17 /openmp /EHsc)",
       "Bash(\"C:\\Program Files\\Microsoft Visual Studio\\2022\\Professional\\VC\\Tools\\MSVC\\14.44.35207\\bin\\Hostx64\\x64\\cl.exe\" /I\".\" ../debug_save_error.cpp uwot_simple_wrapper.cpp lz4.c /Fe:../debug_save_error.exe /std:c++17 /openmp /EHsc)",
       "Read(//c/**)",
-      "Bash(cd /d C:UMAP)"
+      "Bash(cd /d C:UMAP)",
+      "Bash(rm:*)"
     ],
     "deny": [],
     "ask": []

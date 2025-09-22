@@ -123,7 +123,7 @@ cmake --build . --config Release
 
 **PROBLEM SOLVED**: Visual Studio, build systems, and copy operations can use wrong/cached DLLs causing:
 - Pipeline inconsistencies
-- Quantization bugs
+- Performance optimization bugs
 - Save/load failures
 - Memory corruption
 
@@ -160,8 +160,8 @@ private const string EXPECTED_DLL_VERSION = "3.4.0";
 4. **Fixed in v3.0.1:** Proper Linux library (174KB) with complete HNSW optimization
 
 ### Build Size Verification:
-- **Windows `uwot.dll`**: ~220KB (with HNSW + quantization fixes)
-- **Linux `libuwot.so`**: ~174KB+ (with HNSW + quantization fixes)
+- **Windows `uwot.dll`**: ~220KB (with HNSW optimization)
+- **Linux `libuwot.so`**: ~174KB+ (with HNSW optimization)
 - **Old libraries**: <150KB (MISSING features) ❌
 
 ### Required Commands for NuGet Publishing:
@@ -540,7 +540,7 @@ for (int i = 0; i < embedding_dim; i++) {
 }
 
 // 5. VALIDATE WITH MEANINGFUL TOLERANCE
-const float tolerance = use_quantization ? 0.1f : 0.001f;
+const float tolerance = 0.001f;
 assert(max_diff < tolerance);  // ✅ REAL VALIDATION
 ```
 

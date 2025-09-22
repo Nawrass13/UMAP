@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.12)
-project(UMAPWrapper VERSION 3.5.0)
+project(UMWWGBWrapper VERSION 3.5.0)
 
 # Set C++ standard
 set(CMAKE_CXX_STANDARD 17)
@@ -133,18 +133,18 @@ endif()
 # Package configuration
 include(CMakePackageConfigHelpers)
 write_basic_package_version_file(
-    "${CMAKE_CURRENT_BINARY_DIR}/UMAPWrapperConfigVersion.cmake"
+    "${CMAKE_CURRENT_BINARY_DIR}/UMWWGBWrapperConfigVersion.cmake"
     VERSION ${PROJECT_VERSION}
     COMPATIBILITY AnyNewerVersion
 )
 
 # Export targets for build tree
 export(TARGETS uwot_wrapper
-    FILE "${CMAKE_CURRENT_BINARY_DIR}/UMAPWrapperTargets.cmake"
+    FILE "${CMAKE_CURRENT_BINARY_DIR}/UMWWGBWrapperTargets.cmake"
 )
 
 # Install the export set
 install(EXPORT UMAPWrapperTargets
     FILE UMAPWrapperTargets.cmake
-    DESTINATION lib/cmake/UMAPWrapper
+    DESTINATION lib/cmake/UMWWGBWrapper
 )
