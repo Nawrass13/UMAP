@@ -12,7 +12,7 @@
     <!-- Enhanced NuGet metadata -->
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <PackageId>UMAPuwotSharp</PackageId>
-    <Version>3.2.3</Version>
+    <Version>3.8.0</Version>
     <Authors>Amin Gholiha</Authors>
     <Company>ID Soft AB</Company>
     <Product>UMAPuwotSharp Enhanced with HNSW</Product>
@@ -25,25 +25,81 @@
     <PackageProjectUrl>https://github.com/78Spinoza/UMAP</PackageProjectUrl>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageReleaseNotes>
-🐛 CRITICAL PRODUCTION FIX - UMAP v3.2.3: Fixed Save/Load Binary Format + Enhanced Test Suite
+🎉 ARCHITECTURAL REVOLUTION - UMAP v3.8.0: Complete Training Function Consolidation + Enhanced Testing
 
-🔧 CRITICAL SAVE/LOAD BUG FIX:
-- Fixed production crash: HNSW hyperparameters now saved/loaded in correct binary order
-- Corrected binary format mismatch: Parameters were saved at position X but loaded at position Y
-- Enhanced projection consistency: Original vs loaded models now produce identical results (0.000000 difference)
-- Complete parameter preservation: All HNSW/PQ settings properly maintained across save/load cycles
+🚀 CRITICAL ARCHITECTURAL CONSOLIDATION:
+- Complete training function unification: All 4 training variants now use single core implementation
+- Eliminated duplicate code: 300+ lines of duplicate logic consolidated into robust single implementation
+- Bug fix propagation: All training functions automatically benefit from any future bug fixes
+- Enhanced callback system: Seamless v1/v2 callback adapter for backward compatibility
 
-⚠️ PRODUCTION IMPACT:
-- Previous save/load operations could cause crashes or incorrect projections
-- All .umap files created with v3.2.2 and earlier should be regenerated
-- This was a critical binary format bug affecting production deployments
-- Immediate upgrade strongly recommended for any production usage
+🔥 ENHANCED TESTING FRAMEWORK:
+- Realistic HNSW accuracy expectations: MSE threshold updated to reflect 50-2000x speedup tradeoff
+- Fresh binary validation: Critical testing protocol ensures tests run on current code (not old binaries)
+- Complete test suite: 15/15 tests passing with consolidated architecture
+- Production-grade validation: Large-scale dataset testing with proper HNSW evaluation
 
-🎯 WHAT'S FIXED:
-- Save/load cycle now works perfectly across all parameter combinations (PQ on/off, HNSW/exact)
-- Enhanced comprehensive test suite: Now includes projection consistency validation
-- Fit-Project-Save-Load-Project-Compare workflow validated with perfect accuracy
-- Cross-platform binary format consistency verified for Windows/Linux
+⚡ TRAINING FUNCTION CONSOLIDATION:
+- uwot_fit(): Delegates to core implementation (lightweight wrapper)
+- uwot_fit_with_progress(): Contains all fixes and optimizations (single source of truth)
+- uwot_fit_with_enhanced_progress(): Smart callback adapter with full feature parity
+- uwot_fit_with_progress_v2(): Enhanced reporting with loss tracking delegation
+
+🛠️ ENHANCED DEVELOPMENT PRACTICES:
+- Critical testing methodology: Never test on old binaries when builds fail
+- Version synchronization: C++ (3.8.0) and C# (3.8.0) versions perfectly aligned
+- Build validation: Mandatory fresh compilation before any testing
+- Architectural debt elimination: Clean, maintainable, single-responsibility design
+
+💪 PRODUCTION RELIABILITY:
+- Single implementation: One robust, thoroughly tested training pipeline
+- Enhanced maintainability: Future improvements benefit all training functions automatically
+- Backward compatibility: Existing code works unchanged with improved reliability
+- Performance consistency: All training variants deliver same optimized performance
+
+✅ DEVELOPER EXPERIENCE IMPROVEMENTS:
+- Comprehensive documentation: Critical testing protocols documented in CLAUDE.md
+- Enhanced error detection: Version mismatch protection prevents binary/code sync issues
+- Build quality assurance: Proper compilation verification before deployment
+- Future-proof architecture: Extensible design supports upcoming enhancements
+
+🚀 CONTINUES v3.7.0 FEATURES: BREAKTHROUGH STABILITY FIX - Complete Zero Projections Resolution + Production Readiness
+
+🚀 CRITICAL ZERO PROJECTIONS BUG ELIMINATED:
+- Fixed zero projections issue: Transformed points now produce proper non-zero coordinates (0% failures)
+- Advanced adaptive bandwidth calculation: Distance-aware scaling prevents weight collapse for distant points
+- Enhanced normalization consistency: Perfect training/transform pipeline synchronization across all metrics
+- Production-scale validation: Tested with 5000×300D datasets - robust at enterprise scale
+
+🔥 COSINE METRIC BREAKTHROUGH FIXES:
+- HNSW distance conversion correction: Fixed cosine space distance formula (1.0f + distance)
+- Normalization mismatch resolution: Skip z-normalization for cosine/correlation (preserves angles)
+- Build k-NN graph enhancement: Proper metric-specific distance handling in HNSW branch
+- Perfect cosine workflow: Training→Save→Load→Transform produces consistent results
+
+⚡ COMPILATION &amp; API CLEANUPS:
+- Removed quantization remnants: Clean API without unused parameters (uwot_get_model_info fixed)
+- Function signature corrections: Fixed argument count mismatches causing compile failures
+- Exception handling improvements: Clean catch blocks without unused variable warnings
+- Production build ready: All test files removed, optimized for deployment
+
+🛠️ ENHANCED PIPELINE ROBUSTNESS:
+- Recursive call elimination: Enhanced fit function avoids double normalization issues
+- Thread safety improvements: Per-thread RNG generators prevent OpenMP race conditions
+- Memory optimization: Refined bandwidth calculations for large-scale datasets
+- Cross-metric compatibility: Euclidean, Cosine, Manhattan all zero-projection free
+
+💪 ENTERPRISE-SCALE VALIDATION:
+- Large dataset testing: 5000 samples × 300 features → 0% zero projections
+- Multi-metric verification: Euclidean/Cosine/Manhattan all production-ready
+- Performance maintained: No regressions in HNSW optimization benefits
+- Clean compilation: Zero errors, minimal warnings, professional codebase
+
+✅ PRODUCTION DEPLOYMENT READY:
+- Complete stability: Zero projections eliminated across all scenarios
+- Clean build system: No unnecessary test files or debug artifacts
+- API consistency: Proper parameter counts and clean interfaces
+- Cross-platform ready: Windows/Linux binaries fully validated
 
 🚀 CONTINUES v3.2.1 FEATURES: Enhanced API Documentation + Cross-Platform Validation
 

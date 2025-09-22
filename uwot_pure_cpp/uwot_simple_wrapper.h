@@ -25,6 +25,9 @@ extern "C" {
 #define UWOT_ERROR_MODEL_NOT_FITTED -5
 #define UWOT_ERROR_INVALID_MODEL_FILE -6
 
+// Version information
+#define UWOT_WRAPPER_VERSION_STRING "3.8.0"
+
 // Distance metrics
     typedef enum {
         UWOT_METRIC_EUCLIDEAN = 0,
@@ -62,20 +65,7 @@ extern "C" {
     UWOT_API UwotModel* uwot_create();
     UWOT_API void uwot_destroy(UwotModel* model);
 
-    // Training functions
-    UWOT_API int uwot_fit(UwotModel* model,
-        float* data,
-        int n_obs,
-        int n_dim,
-        int embedding_dim,
-        int n_neighbors,
-        float min_dist,
-        float spread,
-        int n_epochs,
-        UwotMetric metric,
-        float* embedding,
-        int force_exact_knn = 0);
-
+    // UNIFIED TRAINING PIPELINE - All functions use same core implementation
     UWOT_API int uwot_fit_with_progress(UwotModel* model,
         float* data,
         int n_obs,
@@ -89,33 +79,10 @@ extern "C" {
         float* embedding,
         uwot_progress_callback progress_callback,
         int force_exact_knn = 0,
-        int use_quantization = 1,
         int M = -1,
         int ef_construction = -1,
-        int ef_search = -1,
-        int pq_subspaces = -1);
+        int ef_search = -1);
 
-    // Enhanced training functions with detailed progress reporting
-    UWOT_API int uwot_fit_with_enhanced_progress(UwotModel* model,
-        float* data,
-        int n_obs,
-        int n_dim,
-        int embedding_dim,
-        int n_neighbors,
-        float min_dist,
-        float spread,
-        int n_epochs,
-        UwotMetric metric,
-        float* embedding,
-        uwot_progress_callback_v2 progress_callback,
-        int force_exact_knn = 0,
-        int use_quantization = 1,
-        int M = -1,
-        int ef_construction = -1,
-        int ef_search = -1,
-        int pq_subspaces = -1);
-
-    // Enhanced training functions with loss reporting (v2 API)
     UWOT_API int uwot_fit_with_progress_v2(UwotModel* model,
         float* data,
         int n_obs,
@@ -129,11 +96,9 @@ extern "C" {
         float* embedding,
         uwot_progress_callback_v2 progress_callback,
         int force_exact_knn = 0,
-        int use_quantization = 1,
         int M = -1,
         int ef_construction = -1,
-        int ef_search = -1,
-        int pq_subspaces = -1);
+        int ef_search = -1);
 
     // Global callback management functions
     UWOT_API void uwot_set_global_callback(uwot_progress_callback_v2 callback);
@@ -181,7 +146,6 @@ extern "C" {
         float* min_dist,
         float* spread,
         UwotMetric* metric,
-        int* use_quantization,
         int* hnsw_M,
         int* hnsw_ef_construction,
         int* hnsw_ef_search);
@@ -192,6 +156,7 @@ extern "C" {
     UWOT_API int uwot_get_embedding_dim(UwotModel* model);
     UWOT_API int uwot_get_n_vertices(UwotModel* model);
     UWOT_API int uwot_is_fitted(UwotModel* model);
+    UWOT_API const char* uwot_get_version();
 
 #ifdef __cplusplus
 }

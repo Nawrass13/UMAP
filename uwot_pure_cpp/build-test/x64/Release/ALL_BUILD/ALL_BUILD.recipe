@@ -8,13 +8,25 @@
       <FullPath>C:\UMAP\uwot_pure_cpp\build-test\Release\uwot.dll</FullPath>
     </ProjectOutput>
     <ProjectOutput>
-      <FullPath>C:\UMAP\uwot_pure_cpp\build-test\Release\comprehensive_test.exe</FullPath>
+      <FullPath>C:\UMAP\uwot_pure_cpp\build-test\Release\debug_large_save_load.exe</FullPath>
     </ProjectOutput>
     <ProjectOutput>
-      <FullPath>C:\UMAP\uwot_pure_cpp\build-test\Release\hnsw_validation_test.exe</FullPath>
+      <FullPath>C:\UMAP\uwot_pure_cpp\build-test\Release\simple_save_load_test.exe</FullPath>
     </ProjectOutput>
     <ProjectOutput>
-      <FullPath>C:\UMAP\uwot_pure_cpp\build-test\Release\test_enhanced_wrapper.exe</FullPath>
+      <FullPath>C:\UMAP\uwot_pure_cpp\build-test\Release\test_fixed_large_scale.exe</FullPath>
+    </ProjectOutput>
+    <ProjectOutput>
+      <FullPath>C:\UMAP\uwot_pure_cpp\build-test\Release\test_hnsw_exact_mse_unified.exe</FullPath>
+    </ProjectOutput>
+    <ProjectOutput>
+      <FullPath>C:\UMAP\uwot_pure_cpp\build-test\Release\test_realistic_mse.exe</FullPath>
+    </ProjectOutput>
+    <ProjectOutput>
+      <FullPath>C:\UMAP\uwot_pure_cpp\build-test\Release\test_user_exact_params.exe</FullPath>
+    </ProjectOutput>
+    <ProjectOutput>
+      <FullPath>C:\UMAP\uwot_pure_cpp\build-test\Release\test_user_params.exe</FullPath>
     </ProjectOutput>
     <ProjectOutput>
       <FullPath>C:\UMAP\uwot_pure_cpp\build-test\x64\Release\ALL_BUILD</FullPath>

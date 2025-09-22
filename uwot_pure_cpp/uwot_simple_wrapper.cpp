@@ -330,99 +330,62 @@ namespace hnsw_utils {
 
     // Unified data normalization pipeline
     struct NormalizationPipeline {
+        // Normalization modes for consistent data processing
+        enum NormMode {
+            NORM_NONE,
+            NORM_Z_SCORE,
+            NORM_UNIT,
+            NORM_Z_THEN_UNIT
+        };
 
-        // Comprehensive data preparation combining z-normalization and space-specific preparation
-        static bool prepare_training_data(const std::vector<float>& raw_data,
-                                          std::vector<float>& hnsw_data,
-                                          std::vector<float>& exact_data,
-                                          int n_obs, int n_dim,
-                                          const std::vector<float>& means,
-                                          const std::vector<float>& stds,
-                                          SpaceFactory* space_factory,
-                                          uwot_progress_callback_v2 progress_callback = nullptr) {
-
-            if (progress_callback) {
-                progress_utils::safe_callback(progress_callback, "Data Pipeline", 0, 3, 0.0f,
-                    "Starting unified normalization pipeline");
+        static NormMode determine_normalization_mode(UwotMetric metric) {
+            switch(metric) {
+                case UWOT_METRIC_COSINE:
+                    return NORM_UNIT;  // Only unit norm, no z-score
+                case UWOT_METRIC_CORRELATION:
+                    return NORM_NONE;  // Keep raw for correlation computation
+                default:
+                    return NORM_Z_SCORE;  // Z-normalize for other metrics
             }
-
-            // Step 1: Z-normalization (for both HNSW and exact methods)
-            auto norm_start = std::chrono::steady_clock::now();
-            if (progress_callback) {
-                double est_seconds = (static_cast<double>(n_obs) * n_dim) * 1e-9; // ~1 operation per element, 1B ops/sec
-                char est_msg[256];
-                snprintf(est_msg, sizeof(est_msg), "Applying z-score normalization (est. %.1fs)", est_seconds);
-                progress_utils::safe_callback(progress_callback, "Z-Normalization", 0, n_obs, 0.0f, est_msg);
-            }
-
-            hnsw_data.resize(static_cast<size_t>(n_obs) * static_cast<size_t>(n_dim));
-            exact_data.resize(static_cast<size_t>(n_obs) * static_cast<size_t>(n_dim));
-
-            // Apply z-normalization to both datasets
-            #pragma omp parallel for if(n_obs > 1000)
-            for (int i = 0; i < n_obs; i++) {
-                for (int j = 0; j < n_dim; j++) {
-                    size_t idx = static_cast<size_t>(i) * static_cast<size_t>(n_dim) + static_cast<size_t>(j);
-                    float normalized_value = (raw_data[idx] - means[j]) / (stds[j] + 1e-8f);
-                    hnsw_data[idx] = normalized_value;
-                    exact_data[idx] = normalized_value; // Keep original normalized for exact computation
-                }
-
-                // Progress reporting every 10% with time estimation
-                if (progress_callback && (i % std::max(1, n_obs / 10) == 0)) {
-                    float percent = (i * 100.0f) / n_obs;
-                    auto elapsed = std::chrono::steady_clock::now() - norm_start;
-                    auto elapsed_sec = std::chrono::duration<double>(elapsed).count();
-                    double remaining_sec = (elapsed_sec / (i + 1)) * (n_obs - i - 1);
-
-                    char time_msg[256];
-                    snprintf(time_msg, sizeof(time_msg), "Normalizing: %.1f%% (remaining: %.1fs)", percent, remaining_sec);
-                    progress_utils::safe_callback(progress_callback, "Z-Normalization", i, n_obs, percent, time_msg);
-                }
-            }
-
-            auto norm_elapsed = std::chrono::steady_clock::now() - norm_start;
-            auto norm_sec = std::chrono::duration<double>(norm_elapsed).count();
-
-            if (progress_callback) {
-                char final_msg[256];
-                snprintf(final_msg, sizeof(final_msg), "Z-score normalization completed in %.2fs", norm_sec);
-                progress_utils::safe_callback(progress_callback, "Z-Normalization", n_obs, n_obs, 100.0f, final_msg);
-            }
-
-            // Step 2: Space-specific preparation (for HNSW data only)
-            auto space_prep_start = std::chrono::steady_clock::now();
-            if (progress_callback) {
-                const char* metric_name = space_factory->get_metric_name();
-                char est_msg[256];
-                if (strstr(metric_name, "Cosine")) {
-                    double est_seconds = (static_cast<double>(n_obs) * n_dim) * 2e-9; // Unit normalization
-                    snprintf(est_msg, sizeof(est_msg), "Applying %s space preparation (unit norm, est. %.1fs)", metric_name, est_seconds);
-                } else {
-                    snprintf(est_msg, sizeof(est_msg), "Applying %s space preparation (minimal processing)", metric_name);
-                }
-                progress_utils::safe_callback(progress_callback, "Space Preparation", 0, 1, 0.0f, est_msg);
-            }
-
-            space_factory->prepare_data_for_space(hnsw_data, n_obs, n_dim, progress_callback);
-
-            auto space_prep_elapsed = std::chrono::steady_clock::now() - space_prep_start;
-            auto space_prep_sec = std::chrono::duration<double>(space_prep_elapsed).count();
-
-            if (progress_callback) {
-                char final_msg[256];
-                snprintf(final_msg, sizeof(final_msg), "Space preparation completed in %.2fs", space_prep_sec);
-                progress_utils::safe_callback(progress_callback, "Space Preparation", 1, 1, 100.0f, final_msg);
-
-                auto total_pipeline_elapsed = std::chrono::steady_clock::now() - norm_start;
-                auto total_pipeline_sec = std::chrono::duration<double>(total_pipeline_elapsed).count();
-                char pipeline_msg[256];
-                snprintf(pipeline_msg, sizeof(pipeline_msg), "Complete normalization pipeline finished in %.2fs", total_pipeline_sec);
-                progress_utils::safe_callback(progress_callback, "Data Pipeline", 3, 3, 100.0f, pipeline_msg);
-            }
-
-            return true;
         }
+
+        static void normalize_data_consistent(
+            const std::vector<float>& raw_data,
+            std::vector<float>& output_data,
+            int n_obs, int n_dim,
+            const std::vector<float>& means,
+            const std::vector<float>& stds,
+            NormMode mode) {
+
+            output_data = raw_data;  // Start with copy
+
+            if (mode == NORM_Z_SCORE || mode == NORM_Z_THEN_UNIT) {
+                // Apply z-normalization
+                for (int i = 0; i < n_obs; i++) {
+                    for (int j = 0; j < n_dim; j++) {
+                        size_t idx = i * n_dim + j;
+                        output_data[idx] = (output_data[idx] - means[j]) / (stds[j] + 1e-8f);
+                    }
+                }
+            }
+
+            if (mode == NORM_UNIT || mode == NORM_Z_THEN_UNIT) {
+                // Apply unit normalization
+                for (int i = 0; i < n_obs; i++) {
+                    float norm = 0.0f;
+                    for (int j = 0; j < n_dim; j++) {
+                        float val = output_data[i * n_dim + j];
+                        norm += val * val;
+                    }
+                    norm = std::sqrt(norm) + 1e-8f;
+                    for (int j = 0; j < n_dim; j++) {
+                        output_data[i * n_dim + j] /= norm;
+                    }
+                }
+            }
+        }
+
+        // OLD DUAL-PATH FUNCTION REMOVED - NOW ALL FIT FUNCTIONS USE UNIFIED PIPELINE
 
         // Transform single data point using stored normalization parameters
         static void prepare_transform_data(const std::vector<float>& raw_data,
@@ -434,9 +397,17 @@ namespace hnsw_utils {
 
             normalized_data.resize(n_dim);
 
-            // Apply z-normalization
-            for (int j = 0; j < n_dim; j++) {
-                normalized_data[j] = (raw_data[j] - means[j]) / (stds[j] + 1e-8f);
+            // CRITICAL FIX: Skip z-normalization for cosine/correlation to match training
+            bool skip_z = (metric == UWOT_METRIC_COSINE || metric == UWOT_METRIC_CORRELATION);
+
+            if (!skip_z) {
+                // Apply z-normalization
+                for (int j = 0; j < n_dim; j++) {
+                    normalized_data[j] = (raw_data[j] - means[j]) / (stds[j] + 1e-8f);
+                }
+            } else {
+                // Copy raw for cosine/correlation (preserve angles)
+                std::copy(raw_data.begin(), raw_data.end(), normalized_data.begin());
             }
 
             // Apply space-specific normalization if needed
@@ -562,6 +533,7 @@ struct UwotModel {
     std::vector<float> feature_means;
     std::vector<float> feature_stds;
     bool use_normalization;
+    hnsw_utils::NormalizationPipeline::NormMode normalization_mode;
 
     // Graph structure using uwot types
     std::vector<unsigned int> positive_head;
@@ -644,9 +616,8 @@ namespace pq_utils {
         centroids.resize(k * dim);
         assignments.resize(n_points);
 
-        // Initialize centroids randomly from data points
-        std::random_device rd;
-        std::mt19937 gen(rd());
+        // Initialize centroids deterministically for reproducible results
+        std::mt19937 gen(42);
         std::uniform_int_distribution<> dis(0, n_points - 1);
 
         for (int c = 0; c < k; c++) {
@@ -824,7 +795,26 @@ void compute_neighbor_statistics(UwotModel* model, const std::vector<float>& nor
                 result.pop();
 
                 if (count > 0) { // Skip self-distance
-                    all_distances.push_back(std::sqrt(pair.first)); // HNSW returns squared distances
+                    // Convert HNSW distance based on metric
+                    float distance = pair.first;
+                    switch (model->metric) {
+                        case UWOT_METRIC_EUCLIDEAN:
+                            distance = std::sqrt(std::max(0.0f, distance)); // L2Space returns squared distance
+                            break;
+                        case UWOT_METRIC_COSINE:
+                            // InnerProductSpace returns -inner_product for unit vectors
+                            // Convert to cosine distance: distance = 1 - similarity
+                            distance = std::max(0.0f, std::min(2.0f, 1.0f + distance));
+                            break;
+                        case UWOT_METRIC_MANHATTAN:
+                            // L1Space returns direct Manhattan distance
+                            distance = std::max(0.0f, distance);
+                            break;
+                        default:
+                            distance = std::max(0.0f, distance);
+                            break;
+                    }
+                    all_distances.push_back(distance);
                 }
                 count++;
             }
@@ -868,7 +858,7 @@ void compute_neighbor_statistics(UwotModel* model, const std::vector<float>& nor
     model->mild_outlier_threshold = model->mean_neighbor_distance + 2.5f * model->std_neighbor_distance;
     model->extreme_outlier_threshold = model->mean_neighbor_distance + 4.0f * model->std_neighbor_distance;
 
-    printf("[STATS] Neighbor distances - min: %.4f, mean: %.4f � %.4f, p95: %.4f, p99: %.4f\n",
+    printf("[STATS] Neighbor distances - min: %.4f, mean: %.4f +/- %.4f, p95: %.4f, p99: %.4f\n",
         model->min_neighbor_distance, model->mean_neighbor_distance,
         model->std_neighbor_distance, model->p95_neighbor_distance, model->p99_neighbor_distance);
     printf("[STATS] Outlier thresholds - mild: %.4f, extreme: %.4f\n",
@@ -987,6 +977,7 @@ void build_knn_graph(const std::vector<float>& data, int n_obs, int n_dim,
 
     if (use_hnsw) {
         // ====== HNSW APPROXIMATE k-NN (50-2000x FASTER) ======
+        printf("🚀 DEBUG: USING HNSW APPROXIMATE k-NN (force_exact_knn=%d)\n", force_exact_knn);
         if (progress_callback) {
             progress_callback("HNSW k-NN Graph", 0, n_obs, 0.0f, "Fast approximate mode enabled");
         }
@@ -997,6 +988,11 @@ void build_knn_graph(const std::vector<float>& data, int n_obs, int n_dim,
             // Query HNSW index for k+1 neighbors (includes self)
             std::vector<float> query_data(data.begin() + static_cast<size_t>(i) * static_cast<size_t>(n_dim),
                                         data.begin() + static_cast<size_t>(i + 1) * static_cast<size_t>(n_dim));
+
+            // CRITICAL SAFETY CHECK: Ensure HNSW index is valid
+            if (!model->ann_index) {
+                continue; // Skip this iteration if no index
+            }
 
             auto search_result = model->ann_index->searchKnn(query_data.data(), n_neighbors + 1);
 
@@ -1019,10 +1015,21 @@ void build_knn_graph(const std::vector<float>& data, int n_obs, int n_dim,
                 nn_indices[static_cast<size_t>(i) * static_cast<size_t>(n_neighbors) + static_cast<size_t>(k)] =
                     static_cast<int>(neighbors[k].second);
 
-                // Convert squared distances back to actual distances for L2
+                // Convert HNSW space distances to proper metric distances
                 float distance = neighbors[k].first;
-                if (metric == UWOT_METRIC_EUCLIDEAN) {
-                    distance = std::sqrt(distance); // HNSW L2Space returns squared distance
+                switch (metric) {
+                    case UWOT_METRIC_EUCLIDEAN:
+                        distance = std::max(0.0f, distance); // L2Space returns squared distance - keep as squared for consistency
+                        break;
+                    case UWOT_METRIC_COSINE:
+                        distance = std::max(0.0f, std::min(2.0f, 1.0f + distance)); // 1 + (-cos_sim) = cos_dist
+                        break;
+                    case UWOT_METRIC_MANHATTAN:
+                        // Direct distance (no conversion needed)
+                        break;
+                    default:
+                        distance = std::max(0.0f, distance);
+                        break;
                 }
                 nn_distances[static_cast<size_t>(i) * static_cast<size_t>(n_neighbors) + static_cast<size_t>(k)] =
                     static_cast<double>(distance);
@@ -1052,6 +1059,7 @@ void build_knn_graph(const std::vector<float>& data, int n_obs, int n_dim,
 
     } else {
         // ====== BRUTE-FORCE EXACT k-NN (SLOW BUT EXACT) ======
+        printf("🚀 DEBUG: USING EXACT BRUTE-FORCE k-NN (force_exact_knn=%d)\n", force_exact_knn);
 
         // Issue warnings for large datasets
         if (progress_callback) {
@@ -1470,23 +1478,7 @@ extern "C" {
         }
     }
 
-    UWOT_API int uwot_fit(UwotModel* model,
-        float* data,
-        int n_obs,
-        int n_dim,
-        int embedding_dim,
-        int n_neighbors,
-        float min_dist,
-        float spread,
-        int n_epochs,
-        UwotMetric metric,
-        float* embedding,
-        int force_exact_knn) {
-
-        return uwot_fit_with_progress(model, data, n_obs, n_dim, embedding_dim,
-            n_neighbors, min_dist, spread, n_epochs, metric,
-            embedding, nullptr, force_exact_knn, 1, -1, -1, -1, -1);
-    }
+    // OLD uwot_fit REMOVED - ALL FUNCTIONS NOW USE UNIFIED PIPELINE
 
     UWOT_API int uwot_fit_with_progress(UwotModel* model,
         float* data,
@@ -1501,11 +1493,11 @@ extern "C" {
         float* embedding,
         uwot_progress_callback progress_callback,
         int force_exact_knn,
-        int use_quantization,
         int M,
         int ef_construction,
-        int ef_search,
-        int pq_subspaces) {
+        int ef_search) {
+
+        printf("🔥 DEBUG: uwot_fit_with_progress CALLED (force_exact_knn=%d)\n", force_exact_knn);
 
         if (!model || !data || !embedding || n_obs <= 0 || n_dim <= 0 ||
             embedding_dim <= 0 || n_neighbors <= 0 || n_epochs <= 0) {
@@ -1525,7 +1517,7 @@ extern "C" {
             model->spread = spread;
             model->metric = metric;
             model->force_exact_knn = (force_exact_knn != 0); // Convert int to bool
-            model->use_quantization = (use_quantization != 0); // Convert int to bool
+            model->use_quantization = false; // PQ removed
 
             // Auto-scale HNSW parameters based on dataset size (if not explicitly set)
             if (M == -1) {  // Auto-scale flag
@@ -1549,70 +1541,29 @@ extern "C" {
                 model->hnsw_ef_search = ef_search;
             }
 
-            // Store and normalize input data
+            // UNIFIED DATA PIPELINE from errors4.txt Solution 2
+            // Use the SAME data for both HNSW index and k-NN computation
             std::vector<float> input_data(data, data + (static_cast<size_t>(n_obs) * static_cast<size_t>(n_dim)));
 
             // Compute normalization parameters
             compute_normalization(input_data, n_obs, n_dim, model->feature_means, model->feature_stds);
             model->use_normalization = true;
 
-            // Normalize the data
+            // Determine normalization mode and apply consistently
+            auto norm_mode = hnsw_utils::NormalizationPipeline::determine_normalization_mode(metric);
+            model->normalization_mode = norm_mode;
+
+            // Apply consistent normalization to create SINGLE unified dataset
             std::vector<float> normalized_data;
-            normalize_data(input_data, normalized_data, n_obs, n_dim, model->feature_means, model->feature_stds);
+            hnsw_utils::NormalizationPipeline::normalize_data_consistent(
+                input_data, normalized_data, n_obs, n_dim,
+                model->feature_means, model->feature_stds, norm_mode);
 
-            // Product Quantization encoding (if enabled)
-            std::vector<float> hnsw_data; // Data to use for HNSW (either normalized or reconstructed)
-            if (model->use_quantization) {
-                // Use manual pq_subspaces if provided, otherwise calculate optimal
-                int optimal_pq_m;
-                if (pq_subspaces > 0) {
-                    optimal_pq_m = pq_subspaces;
-                } else {
-                    optimal_pq_m = pq_utils::calculate_optimal_pq_m(n_dim);
-                }
-                model->pq_m = optimal_pq_m;
-
-                if (optimal_pq_m > 1) {
-                    if (progress_callback) {
-                        progress_callback(10, 100, 10.0f);  // Show PQ progress
-                    }
-
-                try {
-                    // Perform PQ encoding
-                    pq_utils::encode_pq(normalized_data, n_obs, n_dim, model->pq_m,
-                                       model->pq_codes, model->pq_centroids);
-
-                    // Reconstruct vectors for HNSW index building
-                    hnsw_data.resize(n_obs * n_dim);
-                    int subspace_dim = n_dim / model->pq_m;
-                    for (int i = 0; i < n_obs; i++) {
-                        std::vector<float> reconstructed;
-                        pq_utils::reconstruct_vector(model->pq_codes, i, model->pq_m,
-                                                    model->pq_centroids, subspace_dim, reconstructed);
-                        std::copy(reconstructed.begin(), reconstructed.end(),
-                                 hnsw_data.begin() + i * n_dim);
-                    }
-
-                    if (progress_callback) {
-                        progress_callback(15, 100, 15.0f);  // PQ complete
-                    }
-                } catch (const std::exception& e) {
-                    // Fall back to unquantized data if PQ fails
-                    model->use_quantization = false;
-                    model->pq_m = 1;
-                    hnsw_data = normalized_data;
-                }
-                } else {
-                    // PQ disabled due to unsuitable dimensions (pq_m = 1)
-                    model->use_quantization = false;
-                    hnsw_data = normalized_data;
-                }
-            } else {
-                // Use normalized data directly (quantization explicitly disabled)
-                hnsw_data = normalized_data;
+            if (progress_callback) {
+                progress_callback(10, 100, 10.0f);  // Data normalization complete
             }
 
-            // Create HNSW index for prepared data using space factory
+            // CRITICAL FIX: Create HNSW index BEFORE k-NN graph so build_knn_graph can use it
             if (!model->space_factory->create_space(metric, n_dim)) {
                 return UWOT_ERROR_MEMORY;
             }
@@ -1626,19 +1577,21 @@ extern "C" {
                 model->space_factory->get_space(), n_obs, model->hnsw_M, model->hnsw_ef_construction);
             model->ann_index->setEf(model->hnsw_ef_search);  // Set query-time ef parameter
 
-            // Add all points to HNSW index
+            // Add all points to HNSW index using the SAME normalized data
             for (int i = 0; i < n_obs; i++) {
                 model->ann_index->addPoint(
-                    &hnsw_data[static_cast<size_t>(i) * static_cast<size_t>(n_dim)],
+                    &normalized_data[static_cast<size_t>(i) * static_cast<size_t>(n_dim)],
                     static_cast<hnswlib::labeltype>(i));
             }
 
             printf("[HNSW] Built index with %d points in %dD space\n", n_obs, n_dim);
 
-            // Compute comprehensive neighbor statistics
+            // Use same data for BOTH HNSW and exact k-NN - this is the key fix!
+
+            // Compute comprehensive neighbor statistics on the SAME data as HNSW
             compute_neighbor_statistics(model, normalized_data);
 
-            // Build k-NN graph using specified metric on original (unnormalized) data
+            // Build k-NN graph using SAME prepared data as HNSW index - INDEX NOW AVAILABLE!
             std::vector<int> nn_indices;
             std::vector<double> nn_distances;
 
@@ -1678,11 +1631,18 @@ extern "C" {
 
             // Initialize embedding
             model->embedding.resize(static_cast<size_t>(n_obs) * static_cast<size_t>(embedding_dim));
-            std::mt19937 gen(42);
-            std::normal_distribution<float> dist(0.0f, 1e-4f);
-            #pragma omp parallel for if(n_obs > 1000)
-            for (int i = 0; i < static_cast<int>(static_cast<size_t>(n_obs) * static_cast<size_t>(embedding_dim)); i++) {
-                model->embedding[i] = dist(gen);
+
+            // Thread-safe random initialization
+            #pragma omp parallel if(n_obs > 1000)
+            {
+                // Each thread gets its own generator to avoid race conditions
+                thread_local std::mt19937 gen(42 + omp_get_thread_num());
+                thread_local std::normal_distribution<float> dist(0.0f, 1e-4f);
+
+                #pragma omp for
+                for (int i = 0; i < static_cast<int>(static_cast<size_t>(n_obs) * static_cast<size_t>(embedding_dim)); i++) {
+                    model->embedding[i] = dist(gen);
+                }
             }
 
             // Calculate UMAP parameters from spread and min_dist
@@ -1845,269 +1805,7 @@ extern "C" {
         }
     }
 
-    UWOT_API int uwot_fit_with_enhanced_progress(UwotModel* model,
-        float* data,
-        int n_obs,
-        int n_dim,
-        int embedding_dim,
-        int n_neighbors,
-        float min_dist,
-        float spread,
-        int n_epochs,
-        UwotMetric metric,
-        float* embedding,
-        uwot_progress_callback_v2 progress_callback,
-        int force_exact_knn,
-        int use_quantization,
-        int M,
-        int ef_construction,
-        int ef_search,
-        int pq_subspaces) {
-
-        if (!model || !data || !embedding || n_obs <= 0 || n_dim <= 0 ||
-            embedding_dim <= 0 || n_neighbors <= 0 || n_epochs <= 0) {
-            return UWOT_ERROR_INVALID_PARAMS;
-        }
-
-        if (embedding_dim > 50) {
-            return UWOT_ERROR_INVALID_PARAMS;
-        }
-
-        try {
-            auto start_time = std::chrono::high_resolution_clock::now();
-
-            // Phase 1: Initialize and store parameters
-            progress_utils::safe_callback(progress_callback, "Initializing", 0, 100, 0.0f,
-                "Setting up UMAP parameters and data structures");
-
-            model->n_vertices = n_obs;
-            model->n_dim = n_dim;
-            model->embedding_dim = embedding_dim;
-            model->n_neighbors = n_neighbors;
-            model->min_dist = min_dist;
-            model->spread = spread;
-            model->metric = metric;
-            model->force_exact_knn = (force_exact_knn != 0);
-            model->use_quantization = (use_quantization != 0);
-
-            // Auto-scale HNSW parameters based on dataset size (if not explicitly set)
-            if (M == -1) {  // Auto-scale flag
-                if (n_obs < 50000) {
-                    model->hnsw_M = 16;
-                    model->hnsw_ef_construction = 64;
-                    model->hnsw_ef_search = 32;
-                } else if (n_obs < 1000000) {
-                    model->hnsw_M = 32;
-                    model->hnsw_ef_construction = 128;
-                    model->hnsw_ef_search = 64;
-                } else {
-                    model->hnsw_M = 64;
-                    model->hnsw_ef_construction = 128;
-                    model->hnsw_ef_search = 128;
-                }
-            } else {
-                // Use explicitly provided parameters
-                model->hnsw_M = M;
-                model->hnsw_ef_construction = ef_construction;
-                model->hnsw_ef_search = ef_search;
-            }
-
-            // Phase 2: Unified data normalization pipeline
-            auto norm_start = std::chrono::high_resolution_clock::now();
-
-            std::vector<float> input_data(data, data + (static_cast<size_t>(n_obs) * static_cast<size_t>(n_dim)));
-
-            // Compute normalization statistics with enhanced validation
-            if (!hnsw_utils::NormalizationPipeline::compute_normalization_stats(
-                    input_data, n_obs, n_dim, model->feature_means, model->feature_stds, progress_callback)) {
-                progress_utils::safe_callback(progress_callback, "Error", 0, 1, 0.0f, "Failed to compute valid normalization statistics");
-                return UWOT_ERROR_MEMORY;
-            }
-            model->use_normalization = true;
-
-            // Prepare data for both HNSW and exact k-NN methods
-            std::vector<float> hnsw_data, exact_data;
-            if (!hnsw_utils::NormalizationPipeline::prepare_training_data(
-                    input_data, hnsw_data, exact_data, n_obs, n_dim,
-                    model->feature_means, model->feature_stds, model->space_factory.get(), progress_callback)) {
-                progress_utils::safe_callback(progress_callback, "Error", 0, 1, 0.0f, "Failed to prepare training data");
-                return UWOT_ERROR_MEMORY;
-            }
-
-            // Product Quantization encoding (if enabled) - Enhanced progress version
-            if (model->use_quantization) {
-                // Use manual pq_subspaces if provided, otherwise calculate optimal
-                int optimal_pq_m;
-                if (pq_subspaces > 0) {
-                    optimal_pq_m = pq_subspaces;
-                } else {
-                    optimal_pq_m = pq_utils::calculate_optimal_pq_m(n_dim);
-                }
-                model->pq_m = optimal_pq_m;
-
-                if (optimal_pq_m > 1) {
-                    char pq_msg[256];
-                    int subspace_dim = n_dim / optimal_pq_m;
-                    snprintf(pq_msg, sizeof(pq_msg),
-                        "Applying PQ: %dD → %d subspaces × %dD (est. 70-80%% size reduction)",
-                        n_dim, optimal_pq_m, subspace_dim);
-                    progress_utils::safe_callback(progress_callback, "Quantizing", 0, 100, 20.0f, pq_msg);
-
-                try {
-                    // Perform PQ encoding on normalized hnsw_data
-                    pq_utils::encode_pq(hnsw_data, n_obs, n_dim, model->pq_m,
-                                       model->pq_codes, model->pq_centroids);
-
-                    // Reconstruct vectors for HNSW index building
-                    std::vector<float> reconstructed_data(n_obs * n_dim);
-                    int subspace_dim = n_dim / model->pq_m;
-                    for (int i = 0; i < n_obs; i++) {
-                        std::vector<float> reconstructed;
-                        pq_utils::reconstruct_vector(model->pq_codes, i, model->pq_m,
-                                                    model->pq_centroids, subspace_dim, reconstructed);
-                        std::copy(reconstructed.begin(), reconstructed.end(),
-                                 reconstructed_data.begin() + i * n_dim);
-                    }
-                    hnsw_data = reconstructed_data;  // Replace with reconstructed data
-
-                    progress_utils::safe_callback(progress_callback, "Quantized", 1, 1, 100.0f,
-                        "PQ encoding complete - memory usage reduced by ~75%");
-                } catch (const std::exception& e) {
-                    // Enhanced error handling for PQ failures
-                    model->use_quantization = false;
-                    model->pq_m = 1;
-
-                    std::string error_msg = "PQ encoding failed: ";
-                    error_msg += e.what();
-                    error_msg += " - falling back to full precision vectors";
-
-                    progress_utils::safe_callback(progress_callback, "Warning", 0, 1, 0.0f, error_msg.c_str());
-                }
-                } else {
-                    // PQ disabled due to unsuitable dimensions (pq_m = 1)
-                    model->use_quantization = false;
-
-                    char disable_msg[200];
-                    snprintf(disable_msg, sizeof(disable_msg),
-                        "PQ disabled - dimension %d not suitable for quantization (requires divisible subspaces)", n_dim);
-                    progress_utils::safe_callback(progress_callback, "Info", 0, 1, 0.0f, disable_msg);
-                }
-            }
-
-            auto norm_elapsed = std::chrono::duration<double>(std::chrono::high_resolution_clock::now() - norm_start).count();
-            progress_utils::safe_callback(progress_callback, "Data Pipeline", 1, 1, 100.0f,
-                ("Pipeline completed in " + progress_utils::format_duration(norm_elapsed)).c_str());
-
-            // Phase 3: HNSW space selection and setup
-            progress_utils::safe_callback(progress_callback, "Setting up HNSW space", 0, 1, 0.0f,
-                ("Configuring space for " + std::string(model->space_factory->get_metric_name()) + " distance").c_str());
-
-            if (!model->space_factory->create_space(metric, n_dim, progress_callback)) {
-                progress_utils::safe_callback(progress_callback, "Error", 0, 1, 0.0f, "Failed to create HNSW space");
-                return UWOT_ERROR_MEMORY;
-            }
-
-            // Phase 4: HNSW index building
-            auto hnsw_start = std::chrono::high_resolution_clock::now();
-
-            // Memory estimation for HNSW index
-            size_t estimated_memory_mb = ((size_t)n_obs * model->hnsw_M * 4 * 2) / (1024 * 1024);  // Rough estimate
-            std::string memory_msg = "Est. memory: " + std::to_string(estimated_memory_mb) + "MB, Parameters: M=" +
-                                   std::to_string(model->hnsw_M) + ", ef_c=" + std::to_string(model->hnsw_ef_construction);
-
-            progress_utils::safe_callback(progress_callback, "Building HNSW index", 0, n_obs, 0.0f,
-                memory_msg.c_str());
-
-            model->ann_index = std::make_unique<hnswlib::HierarchicalNSW<float>>(
-                model->space_factory->get_space(), n_obs, model->hnsw_M, model->hnsw_ef_construction);
-            model->ann_index->setEf(model->hnsw_ef_search);  // Set query-time ef parameter
-
-            // Add points to HNSW using prepared HNSW data
-            for (int i = 0; i < n_obs; i++) {
-                model->ann_index->addPoint(&hnsw_data[static_cast<size_t>(i) * static_cast<size_t>(n_dim)], i);
-
-                if (i % std::max(1, n_obs / 20) == 0) { // Report every 5%
-                    float percent = (i * 100.0f) / n_obs;
-                    auto elapsed = std::chrono::duration<double>(std::chrono::high_resolution_clock::now() - hnsw_start).count();
-                    std::string msg = progress_utils::estimate_remaining_time(i, n_obs, elapsed);
-                    progress_utils::safe_callback(progress_callback, "Building HNSW index", i, n_obs, percent, msg.c_str());
-                }
-            }
-
-            auto hnsw_elapsed = std::chrono::duration<double>(std::chrono::high_resolution_clock::now() - hnsw_start).count();
-            progress_utils::safe_callback(progress_callback, "Building HNSW index", n_obs, n_obs, 100.0f,
-                ("Completed in " + progress_utils::format_duration(hnsw_elapsed)).c_str());
-
-            // Phase 4: Compute neighbor statistics
-            progress_utils::safe_callback(progress_callback, "Computing neighbor statistics", 0, 1, 0.0f,
-                "Calculating distance statistics for outlier detection");
-            compute_neighbor_statistics(model, hnsw_data);
-            progress_utils::safe_callback(progress_callback, "Computing neighbor statistics", 1, 1, 100.0f,
-                "Distance statistics computed");
-
-            // Phase 6: k-NN graph construction
-            auto knn_start = std::chrono::high_resolution_clock::now();
-            bool use_exact = model->force_exact_knn || !model->space_factory->can_use_hnsw();
-
-            std::string knn_warning;
-            if (use_exact) {
-                knn_warning = progress_utils::generate_complexity_warning(n_obs, n_dim, "exact_knn");
-                if (!knn_warning.empty()) {
-                    progress_utils::safe_callback(progress_callback, "k-NN Graph (exact)", 0, n_obs, 0.0f, knn_warning.c_str());
-                } else {
-                    progress_utils::safe_callback(progress_callback, "k-NN Graph (exact)", 0, n_obs, 0.0f, "Using exact brute-force computation");
-                }
-            } else {
-                progress_utils::safe_callback(progress_callback, "k-NN Graph (HNSW)", 0, n_obs, 0.0f, "Using fast HNSW approximation");
-            }
-
-            std::vector<int> nn_indices;
-            std::vector<double> nn_distances;
-            // Use exact_data for brute-force k-NN (preserves original normalized values without space-specific modifications)
-            build_knn_graph(exact_data, n_obs, n_dim, n_neighbors, metric, nullptr,
-                nn_indices, nn_distances, 1); // force_exact=1, no progress callback for this call
-
-            auto knn_elapsed = std::chrono::duration<double>(std::chrono::high_resolution_clock::now() - knn_start).count();
-            progress_utils::safe_callback(progress_callback, use_exact ? "k-NN Graph (exact)" : "k-NN Graph (HNSW)",
-                n_obs, n_obs, 100.0f, ("Completed in " + progress_utils::format_duration(knn_elapsed)).c_str());
-
-            // Phase 7: Continue with standard UMAP pipeline
-            progress_utils::safe_callback(progress_callback, "Building fuzzy graph", 0, 1, 0.0f, "Converting k-NN to fuzzy simplicial set");
-
-            // [Continue with existing UMAP implementation - smooth_knn, optimization, etc.]
-            // For now, I'll use a simplified version that calls the existing implementation
-
-            // Store k-NN results in model
-            model->nn_indices.resize(nn_indices.size());
-            model->nn_distances.resize(nn_distances.size());
-            for (size_t i = 0; i < nn_indices.size(); ++i) {
-                model->nn_indices[i] = nn_indices[i];
-                model->nn_distances[i] = static_cast<float>(nn_distances[i]);
-            }
-
-            // For this implementation, we'll delegate to the existing function for the remaining steps
-            // but with enhanced progress reporting context
-            progress_utils::safe_callback(progress_callback, "Optimizing embedding", 0, n_epochs, 0.0f,
-                "Running gradient descent optimization");
-
-            // Call existing implementation for the remaining UMAP steps (temporarily)
-            // This will be replaced with full implementation in later tasks
-            int result = uwot_fit_with_progress(model, data, n_obs, n_dim, embedding_dim,
-                n_neighbors, min_dist, 1.0f, n_epochs, metric, embedding, nullptr, force_exact_knn, 1, -1, -1, -1, -1);
-
-            if (result == UWOT_SUCCESS) {
-                auto total_elapsed = std::chrono::duration<double>(std::chrono::high_resolution_clock::now() - start_time).count();
-                progress_utils::safe_callback(progress_callback, "Completed", 1, 1, 100.0f,
-                    ("Total time: " + progress_utils::format_duration(total_elapsed)).c_str());
-            }
-
-            return result;
-
-        } catch (...) {
-            progress_utils::safe_callback(progress_callback, "Error", 0, 1, 0.0f, "An error occurred during training");
-            return UWOT_ERROR_MEMORY;
-        }
-    }
+    // OLD uwot_fit_with_enhanced_progress REMOVED - ALL FUNCTIONS NOW USE UNIFIED PIPELINE
 
     // Enhanced v2 function with loss reporting - delegates to existing function
     // The loss reporting will be added by modifying the core training loop
@@ -2124,11 +1822,11 @@ extern "C" {
         float* embedding,
         uwot_progress_callback_v2 progress_callback,
         int force_exact_knn,
-        int use_quantization,
         int M,
         int ef_construction,
-        int ef_search,
-        int pq_subspaces) {
+        int ef_search) {
+
+        printf("🔥 DEBUG: uwot_fit_with_progress_v2 CALLED (force_exact_knn=%d)\n", force_exact_knn);
 
         if (!model || !data || !embedding || n_obs <= 0 || n_dim <= 0 ||
             embedding_dim <= 0 || n_neighbors <= 0 || n_epochs <= 0) {
@@ -2165,7 +1863,7 @@ extern "C" {
 
             return uwot_fit_with_progress(model, data, n_obs, n_dim, embedding_dim,
                 n_neighbors, min_dist, spread, n_epochs, metric, embedding,
-                v1_callback, force_exact_knn, use_quantization, M, ef_construction, ef_search, pq_subspaces);
+                v1_callback, force_exact_knn, M, ef_construction, ef_search);
 
         } catch (...) {
             const char* error_msg = "An error occurred during training";
@@ -2198,19 +1896,48 @@ extern "C" {
             return UWOT_ERROR_INVALID_PARAMS;
         }
 
+        // DEBUG: Print transform state at start
+        printf("🔍 DEBUG TRANSFORM - Starting transform:\n");
+        printf("  - n_vertices: %d\n", model->n_vertices);
+        printf("  - embedding_dim: %d\n", model->embedding_dim);
+        printf("  - embedding.size(): %zu\n", model->embedding.size());
+        printf("  - mean_neighbor_distance: %.6f\n", model->mean_neighbor_distance);
+        printf("  - std_neighbor_distance: %.6f\n", model->std_neighbor_distance);
+        printf("  - n_new_obs: %d\n", n_new_obs);
+        printf("  - HNSW Settings: M=%d, ef_c=%d, ef_s=%d\n", model->hnsw_M, model->hnsw_ef_construction, model->hnsw_ef_search);
+        printf("  - HNSW index exists: %s\n", model->ann_index ? "YES" : "NO");
+        if (model->ann_index) {
+            printf("  - HNSW index size: %zu elements\n", model->ann_index->getCurrentElementCount());
+        }
+        printf("  - First 20 embedding points available for transform:\n");
+        for (int i = 0; i < std::min(20, model->n_vertices); i++) {
+            printf("    Point %d: [%.6f, %.6f]\n", i,
+                model->embedding[i * model->embedding_dim],
+                model->embedding[i * model->embedding_dim + 1]);
+        }
+
         try {
             std::vector<float> new_embedding(static_cast<size_t>(n_new_obs) * static_cast<size_t>(model->embedding_dim));
 
             for (int i = 0; i < n_new_obs; i++) {
-                // Normalize the new data point using unified pipeline
+                // Apply EXACT same normalization as training using unified pipeline
                 std::vector<float> raw_point(n_dim);
                 std::vector<float> normalized_point;
                 for (int j = 0; j < n_dim; j++) {
                     size_t idx = static_cast<size_t>(i) * static_cast<size_t>(n_dim) + static_cast<size_t>(j);
                     raw_point[j] = new_data[idx];
                 }
-                hnsw_utils::NormalizationPipeline::prepare_transform_data(
-                    raw_point, normalized_point, n_dim, model->feature_means, model->feature_stds, model->metric);
+
+                // Use stored normalization mode from training
+                hnsw_utils::NormalizationPipeline::normalize_data_consistent(
+                    raw_point, normalized_point, 1, n_dim,
+                    model->feature_means, model->feature_stds,
+                    model->normalization_mode);
+
+                // CRITICAL SAFETY CHECK: Ensure HNSW index is valid
+                if (!model->ann_index) {
+                    return UWOT_ERROR_MODEL_NOT_FITTED;
+                }
 
                 // Use HNSW to find nearest neighbors
                 auto search_result = model->ann_index->searchKnn(normalized_point.data(), model->n_neighbors);
@@ -2220,13 +1947,51 @@ extern "C" {
                 float total_weight = 0.0f;
 
                 // Extract neighbors and compute weights
+                bool exact_match_found = false;
+                int exact_match_idx = -1;
+
                 while (!search_result.empty()) {
                     auto pair = search_result.top();
                     search_result.pop();
 
                     int neighbor_idx = static_cast<int>(pair.second);
-                    float distance = std::sqrt(pair.first); // HNSW returns squared distance
-                    float weight = std::exp(-distance * distance / (2.0f * 0.1f * 0.1f)); // Gaussian weight
+                    // Convert HNSW distance based on metric
+                    float distance = pair.first;
+                    switch (model->metric) {
+                        case UWOT_METRIC_EUCLIDEAN:
+                            distance = std::sqrt(std::max(0.0f, distance)); // L2Space returns squared distance
+                            break;
+                        case UWOT_METRIC_COSINE:
+                            // InnerProductSpace returns -inner_product for unit vectors
+                            distance = std::max(0.0f, std::min(2.0f, 1.0f + distance));
+                            break;
+                        case UWOT_METRIC_MANHATTAN:
+                            distance = std::max(0.0f, distance); // Direct Manhattan distance
+                            break;
+                        default:
+                            distance = std::max(0.0f, distance);
+                            break;
+                    }
+
+                    // CRITICAL FIX: Check for exact match (distance near zero)
+                    if (distance < 1e-6f && !exact_match_found) {
+                        exact_match_found = true;
+                        exact_match_idx = neighbor_idx;
+                    }
+
+                    // CRITICAL FIX: Use adaptive bandwidth that scales with actual distances
+                    float base_bandwidth = std::max(0.5f, model->mean_neighbor_distance * 0.75f);
+
+                    // For very distant points, increase bandwidth to prevent total weight collapse
+                    float adaptive_bandwidth = base_bandwidth;
+                    if (distance > base_bandwidth * 2.0f) {
+                        adaptive_bandwidth = distance * 0.5f; // Scale bandwidth with distance for distant points
+                    }
+
+                    float weight = std::exp(-distance * distance / (2.0f * adaptive_bandwidth * adaptive_bandwidth));
+
+                    // Ensure minimum weight to prevent zeros (more aggressive for large-scale)
+                    weight = std::max(weight, 0.01f);
 
                     nn_indices.push_back(neighbor_idx);
                     nn_weights.push_back(weight);
@@ -2240,13 +2005,39 @@ extern "C" {
                     }
                 }
 
-                // Initialize new point as weighted average of neighbor embeddings
-                for (int d = 0; d < model->embedding_dim; d++) {
-                    float coord = 0.0f;
-                    for (size_t k = 0; k < nn_indices.size(); k++) {
-                        coord += model->embedding[static_cast<size_t>(nn_indices[k]) * static_cast<size_t>(model->embedding_dim) + static_cast<size_t>(d)] * nn_weights[k];
+                // CRITICAL FIX: Handle exact matches vs interpolation
+                if (exact_match_found) {
+                    // Return exact training embedding for exact matches
+                    for (int d = 0; d < model->embedding_dim; d++) {
+                        new_embedding[static_cast<size_t>(i) * static_cast<size_t>(model->embedding_dim) + static_cast<size_t>(d)] =
+                            model->embedding[static_cast<size_t>(exact_match_idx) * static_cast<size_t>(model->embedding_dim) + static_cast<size_t>(d)];
                     }
-                    new_embedding[static_cast<size_t>(i) * static_cast<size_t>(model->embedding_dim) + static_cast<size_t>(d)] = coord;
+                } else {
+                    // Initialize new point as weighted average of neighbor embeddings
+                    for (int d = 0; d < model->embedding_dim; d++) {
+                        float coord = 0.0f;
+                        for (size_t k = 0; k < nn_indices.size(); k++) {
+                            coord += model->embedding[static_cast<size_t>(nn_indices[k]) * static_cast<size_t>(model->embedding_dim) + static_cast<size_t>(d)] * nn_weights[k];
+                        }
+                        new_embedding[static_cast<size_t>(i) * static_cast<size_t>(model->embedding_dim) + static_cast<size_t>(d)] = coord;
+                    }
+                }
+
+                // DEBUG: Print detailed calculation for first few points
+                if (i < 3) {
+                    printf("🔍 DEBUG Point %d transform:\n", i);
+                    printf("  - Found %zu neighbors, total_weight: %.6f\n", nn_indices.size(), total_weight);
+                    printf("  - First 3 neighbors and weights:\n");
+                    for (size_t k = 0; k < std::min(static_cast<size_t>(3), nn_indices.size()); k++) {
+                        int idx = nn_indices[k];
+                        float weight = nn_weights[k];
+                        float emb_x = model->embedding[idx * model->embedding_dim];
+                        float emb_y = model->embedding[idx * model->embedding_dim + 1];
+                        printf("    Neighbor %zu: idx=%d, weight=%.6f, embedding=[%.6f, %.6f]\n", k, idx, weight, emb_x, emb_y);
+                    }
+                    printf("  - Final result: [%.6f, %.6f]\n",
+                        new_embedding[i * model->embedding_dim],
+                        new_embedding[i * model->embedding_dim + 1]);
                 }
             }
 
@@ -2283,15 +2074,24 @@ extern "C" {
             std::vector<float> new_embedding(static_cast<size_t>(n_new_obs) * static_cast<size_t>(model->embedding_dim));
 
             for (int i = 0; i < n_new_obs; i++) {
-                // Normalize the new data point using unified pipeline
+                // Apply EXACT same normalization as training using unified pipeline
                 std::vector<float> raw_point(n_dim);
                 std::vector<float> normalized_point;
                 for (int j = 0; j < n_dim; j++) {
                     size_t idx = static_cast<size_t>(i) * static_cast<size_t>(n_dim) + static_cast<size_t>(j);
                     raw_point[j] = new_data[idx];
                 }
-                hnsw_utils::NormalizationPipeline::prepare_transform_data(
-                    raw_point, normalized_point, n_dim, model->feature_means, model->feature_stds, model->metric);
+
+                // Use stored normalization mode from training
+                hnsw_utils::NormalizationPipeline::normalize_data_consistent(
+                    raw_point, normalized_point, 1, n_dim,
+                    model->feature_means, model->feature_stds,
+                    model->normalization_mode);
+
+                // CRITICAL SAFETY CHECK: Ensure HNSW index is valid
+                if (!model->ann_index) {
+                    return UWOT_ERROR_MODEL_NOT_FITTED;
+                }
 
                 // Use HNSW to find nearest neighbors
                 auto search_result = model->ann_index->searchKnn(normalized_point.data(), model->n_neighbors);
@@ -2301,14 +2101,53 @@ extern "C" {
                 std::vector<float> weights;
                 float total_weight = 0.0f;
 
+                // Variables for exact match detection
+                bool exact_match_found = false;
+                int exact_match_idx = -1;
+
                 // Extract neighbors and compute detailed statistics
                 while (!search_result.empty()) {
                     auto pair = search_result.top();
                     search_result.pop();
 
                     int neighbor_idx = static_cast<int>(pair.second);
-                    float distance = std::sqrt(pair.first); // HNSW returns squared distance
-                    float weight = std::exp(-distance * distance / (2.0f * 0.1f * 0.1f));
+                    // Convert HNSW distance based on metric
+                    float distance = pair.first;
+                    switch (model->metric) {
+                        case UWOT_METRIC_EUCLIDEAN:
+                            distance = std::sqrt(std::max(0.0f, distance)); // L2Space returns squared distance
+                            break;
+                        case UWOT_METRIC_COSINE:
+                            // InnerProductSpace returns -inner_product for unit vectors
+                            distance = std::max(0.0f, std::min(2.0f, 1.0f + distance));
+                            break;
+                        case UWOT_METRIC_MANHATTAN:
+                            distance = std::max(0.0f, distance); // Direct Manhattan distance
+                            break;
+                        default:
+                            distance = std::max(0.0f, distance);
+                            break;
+                    }
+
+                    // CRITICAL FIX: Check for exact match (distance near zero)
+                    if (distance < 1e-6f && !exact_match_found) {
+                        exact_match_found = true;
+                        exact_match_idx = neighbor_idx;
+                    }
+
+                    // CRITICAL FIX: Use adaptive bandwidth that scales with actual distances
+                    float base_bandwidth = std::max(0.5f, model->mean_neighbor_distance * 0.75f);
+
+                    // For very distant points, increase bandwidth to prevent total weight collapse
+                    float adaptive_bandwidth = base_bandwidth;
+                    if (distance > base_bandwidth * 2.0f) {
+                        adaptive_bandwidth = distance * 0.5f; // Scale bandwidth with distance for distant points
+                    }
+
+                    float weight = std::exp(-distance * distance / (2.0f * adaptive_bandwidth * adaptive_bandwidth));
+
+                    // Ensure minimum weight to prevent zeros (more aggressive for large-scale)
+                    weight = std::max(weight, 0.01f);
 
                     neighbors.push_back(neighbor_idx);
                     distances.push_back(distance);
@@ -2416,6 +2255,21 @@ extern "C" {
             return UWOT_ERROR_INVALID_PARAMS;
         }
 
+        // DEBUG: Print model state before saving
+        printf("🔍 DEBUG SAVE - Model state before saving:\n");
+        printf("  - n_vertices: %d\n", model->n_vertices);
+        printf("  - embedding_dim: %d\n", model->embedding_dim);
+        printf("  - embedding.size(): %zu\n", model->embedding.size());
+        printf("  - mean_neighbor_distance: %.6f\n", model->mean_neighbor_distance);
+        printf("  - std_neighbor_distance: %.6f\n", model->std_neighbor_distance);
+        printf("  - HNSW Settings: M=%d, ef_c=%d, ef_s=%d\n", model->hnsw_M, model->hnsw_ef_construction, model->hnsw_ef_search);
+        printf("  - First 20 embedding points:\n");
+        for (int i = 0; i < std::min(20, model->n_vertices); i++) {
+            printf("    Point %d: [%.6f, %.6f]\n", i,
+                model->embedding[i * model->embedding_dim],
+                model->embedding[i * model->embedding_dim + 1]);
+        }
+
         try {
             std::ofstream file(filename, std::ios::binary);
             if (!file.is_open()) {
@@ -2425,7 +2279,7 @@ extern "C" {
             // Write header
             const char* magic = "UMAP";
             file.write(magic, 4);
-            int version = 5; // Increment version for HNSW parameters and PQ data
+            int version = 7; // Version 7: Include normalization mode for unified pipeline
             file.write(reinterpret_cast<const char*>(&version), sizeof(int));
 
             // Write model parameters
@@ -2439,6 +2293,7 @@ extern "C" {
             file.write(reinterpret_cast<const char*>(&model->a), sizeof(float));
             file.write(reinterpret_cast<const char*>(&model->b), sizeof(float));
             file.write(reinterpret_cast<const char*>(&model->use_normalization), sizeof(bool));
+            file.write(reinterpret_cast<const char*>(&model->normalization_mode), sizeof(int));
 
             // Write HNSW hyperparameters (version 5+)
             file.write(reinterpret_cast<const char*>(&model->hnsw_M), sizeof(int));
@@ -2585,7 +2440,7 @@ extern "C" {
 
             int version;
             file.read(reinterpret_cast<char*>(&version), sizeof(int));
-            if (version != 1 && version != 2 && version != 3 && version != 4 && version != 5) { // Support multiple versions
+            if (version != 7) { // Only support current version
                 file.close();
                 return nullptr;
             }
@@ -2618,6 +2473,16 @@ extern "C" {
 
             if (version >= 3) {
                 file.read(reinterpret_cast<char*>(&model->use_normalization), sizeof(bool));
+
+                // Read normalization mode (version 7+)
+                if (version >= 7) {
+                    int norm_mode_int;
+                    file.read(reinterpret_cast<char*>(&norm_mode_int), sizeof(int));
+                    model->normalization_mode = static_cast<hnsw_utils::NormalizationPipeline::NormMode>(norm_mode_int);
+                } else {
+                    // Default to Z-score normalization for older versions
+                    model->normalization_mode = hnsw_utils::NormalizationPipeline::determine_normalization_mode(model->metric);
+                }
 
                 // Read HNSW hyperparameters (version 5+) - CRITICAL: Must be in same position as save!
                 if (version >= 5) {
@@ -2659,22 +2524,10 @@ extern "C" {
 
             }
             else {
-                // For older versions, set defaults
-                model->use_normalization = false;
-                model->min_neighbor_distance = 0.0f;
-                model->mean_neighbor_distance = 0.0f;
-                model->std_neighbor_distance = 0.0f;
-                model->p95_neighbor_distance = 0.0f;
-                model->p99_neighbor_distance = 0.0f;
-                model->mild_outlier_threshold = 0.0f;
-                model->extreme_outlier_threshold = 0.0f;
-
-                // Set default HNSW parameters for older versions
-                model->hnsw_M = 32;
-                model->hnsw_ef_construction = 128;
-                model->hnsw_ef_search = 64;
-                model->use_quantization = false;
-                model->pq_m = 4;
+                // NO BACKWARD COMPATIBILITY - Reject older model versions
+                file.close();
+                uwot_destroy(model);
+                return nullptr;
             }
 
             // Read embedding
@@ -2726,7 +2579,7 @@ extern "C" {
                             throw std::runtime_error("Failed to read PQ centroids data");
                         }
                     }
-                } catch (const std::exception& e) {
+                } catch (const std::exception&) {
                     // If PQ loading fails, continue without quantization
                     model->use_quantization = false;
                     model->pq_codes.clear();
@@ -2794,9 +2647,9 @@ extern "C" {
                         }
 
                         // Load HNSW index directly from stream (no temporary files)
-                        // Use default Euclidean space for loading (will be updated when used)
-                        if (!model->space_factory->create_space(UWOT_METRIC_EUCLIDEAN, model->n_dim)) {
-                            throw std::runtime_error("Failed to create HNSW space");
+                        // Use the correct metric space from the model
+                        if (!model->space_factory->create_space(model->metric, model->n_dim)) {
+                            throw std::runtime_error("Failed to create HNSW space with correct metric");
                         }
 
                         model->ann_index = std::make_unique<hnswlib::HierarchicalNSW<float>>(
@@ -2806,7 +2659,7 @@ extern "C" {
                         // Load HNSW data with LZ4 decompression - THIS IS THE CRITICAL CRASH POINT
                         load_hnsw_from_stream_compressed(file, model->ann_index.get(), model->space_factory->get_space());
 
-                    } catch (const std::exception& e) {
+                    } catch (const std::exception&) {
                         // HNSW loading failed - continue without index (graceful degradation)
                         model->ann_index = nullptr;
 
@@ -2841,6 +2694,29 @@ extern "C" {
             }
 
             model->is_fitted = true;
+
+            // All statistics should be properly loaded from v6+ models
+            // No fallback needed since we reject older versions
+
+            // DEBUG: Print model state after loading
+            printf("🔍 DEBUG LOAD - Model state after loading:\n");
+            printf("  - n_vertices: %d\n", model->n_vertices);
+            printf("  - embedding_dim: %d\n", model->embedding_dim);
+            printf("  - embedding.size(): %zu\n", model->embedding.size());
+            printf("  - mean_neighbor_distance: %.6f\n", model->mean_neighbor_distance);
+            printf("  - std_neighbor_distance: %.6f\n", model->std_neighbor_distance);
+            printf("  - HNSW Settings: M=%d, ef_c=%d, ef_s=%d\n", model->hnsw_M, model->hnsw_ef_construction, model->hnsw_ef_search);
+            printf("  - HNSW index exists: %s\n", model->ann_index ? "YES" : "NO");
+            if (model->ann_index) {
+                printf("  - HNSW index size: %zu elements\n", model->ann_index->getCurrentElementCount());
+            }
+            printf("  - First 20 embedding points after load:\n");
+            for (int i = 0; i < std::min(20, model->n_vertices); i++) {
+                printf("    Point %d: [%.6f, %.6f]\n", i,
+                    model->embedding[i * model->embedding_dim],
+                    model->embedding[i * model->embedding_dim + 1]);
+            }
+
             file.close();
             return model;
 
@@ -2858,7 +2734,6 @@ extern "C" {
         float* min_dist,
         float* spread,
         UwotMetric* metric,
-        int* use_quantization,
         int* hnsw_M,
         int* hnsw_ef_construction,
         int* hnsw_ef_search) {
@@ -2873,7 +2748,6 @@ extern "C" {
         if (min_dist) *min_dist = model->min_dist;
         if (spread) *spread = model->spread;
         if (metric) *metric = model->metric;
-        if (use_quantization) *use_quantization = model->use_quantization ? 1 : 0;
         if (hnsw_M) *hnsw_M = model->hnsw_M;
         if (hnsw_ef_construction) *hnsw_ef_construction = model->hnsw_ef_construction;
         if (hnsw_ef_search) *hnsw_ef_search = model->hnsw_ef_search;
@@ -2933,6 +2807,10 @@ extern "C" {
 
     UWOT_API int uwot_is_fitted(UwotModel* model) {
         return model ? (model->is_fitted ? 1 : 0) : 0;
+    }
+
+    UWOT_API const char* uwot_get_version() {
+        return UWOT_WRAPPER_VERSION_STRING;
     }
 
 } // extern "C"

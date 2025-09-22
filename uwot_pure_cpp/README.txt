@@ -61,9 +61,9 @@ A complete, production-ready UMAP (Uniform Manifold Approximation and Projection
 
 ```
 Training Phase:
-Input Data → Feature Normalization → k-NN Graph → UMAP Embedding → HNSW Index → PQ Compression
-   ↓              ↓                     ↓              ↓              ↓              ↓
-[n×d matrix] [standardized]   [graph structure] [n×k embedding] [fast search] [70-80% smaller]
+Input Data → Feature Normalization → k-NN Graph → UMAP Embedding → HNSW Index
+   ↓              ↓                     ↓              ↓              ↓
+[n×d matrix] [standardized]   [graph structure] [n×k embedding] [fast search]
 
 Transform Phase (New Data):
 New Data → Normalization → HNSW Search → Weighted Average → Safety Analysis
@@ -82,16 +82,15 @@ Model Structure (UwotModel):
 │ ├── embedding[n×k]                      │  ← Original embeddings
 │ └── training_stats                      │  ← p95, p99 thresholds
 ├─────────────────────────────────────────┤
-│ HNSW Index + Product Quantization       │
+│ HNSW Index                              │
 │ ├── ann_index (HierarchicalNSW)         │  ← Fast neighbor search
-│ ├── pq_compressed_data                  │  ← PQ-compressed vectors (4 bytes/vec)
-│ ├── pq_centroids[m=4][256]              │  ← k-means centroids per subspace
+│ ├── normalized_data                     │  ← Full precision vectors
 │ └── graph_structure                     │  ← Multi-level connections
 ├─────────────────────────────────────────┤
 │ Model Parameters                        │
 │ ├── n_dim, embedding_dim                │  ← Dimensions
 │ ├── n_neighbors, min_dist               │  ← UMAP parameters
-│ ├── useQuantization, M, ef_*            │  ← PQ & HNSW tuning
+│ ├── M, ef_*                             │  ← HNSW tuning
 │ └── metric, n_epochs                    │  ← Distance & training
 └─────────────────────────────────────────┘
 ```
@@ -111,12 +110,11 @@ UMAP (Uniform Manifold Approximation and Projection) is a dimensionality reducti
 
 ## Enhanced Performance Features
 
-### 🎯 Product Quantization System (NEW v3.2.0)
-- **70-80% file size reduction** with minimal quality loss (2-5% recall reduction)
-- **Advanced k-means clustering**: 4-subspace vector quantization for optimal storage
-- **Smart compression control**: useQuantization parameter (default: enabled)
+### 🎯 Enhanced HNSW System
+- **50-2000x faster** neighbor search during transform operations
+- **80-85% memory reduction** compared to traditional implementations
 - **Intelligent auto-scaling**: Dataset-aware HNSW parameter optimization
-- **Memory estimation**: Real-time usage predictions during training and build phases
+- **Enhanced hyperparameter control**: Full access to M, ef_construction, ef_search parameters
 
 ### ⚡ HNSW Performance Improvements
 - **50-2000x faster** neighbor search during transform operations
@@ -355,7 +353,7 @@ UwotModel* model = uwot_create();
 float data[1000 * 300];  // 1000 samples, 300 features (high-dimensional)
 // ... fill data ...
 
-// Train model with PQ compression and HNSW optimization
+// Train model with HNSW optimization
 float embedding[1000 * 27];  // 27D embedding
 int result = uwot_fit_with_progress(
     model, data, 1000, 300, 27,     // model, data, n_obs, n_dim, embedding_dim
@@ -363,15 +361,14 @@ int result = uwot_fit_with_progress(
     UWOT_METRIC_EUCLIDEAN,           // distance metric
     embedding, progress_callback,    // output & callback
     0,    // force_exact_knn (0=use HNSW when supported)
-    1,    // use_quantization (1=enable PQ compression, default)
     -1, -1, -1  // M, ef_construction, ef_search (-1=auto-scale)
 );
 
 if (result == UWOT_SUCCESS) {
-    // Model file size reduced by 70-80% with PQ compression
-    uwot_save_model(model, "compressed_model.umap");
+    // Save model with HNSW index
+    uwot_save_model(model, "optimized_model.umap");
 
-    // Standard transform (HNSW + PQ optimized)
+    // Standard transform (HNSW optimized)
     float new_data[100 * 300];  // 100 new samples, same 300 features
     float new_embedding[100 * 27];
     uwot_transform(model, new_data, 100, 300, new_embedding);
@@ -388,10 +385,9 @@ if (result == UWOT_SUCCESS) {
                            nn_indices, nn_distances, confidence,
                            outlier_levels, percentiles, z_scores);
 
-    // Print PQ compression statistics
-    printf("Original data size: %.1f MB\n", (1000 * 300 * sizeof(float)) / 1024.0f / 1024.0f);
-    printf("PQ compressed size: %.1f KB\n", (1000 * 4) / 1024.0f);  // 4 bytes per vector
-    printf("Compression ratio: %.1f%%\n", (1000 * 4 * 100.0f) / (1000 * 300 * sizeof(float)));
+    // Print HNSW optimization statistics
+    printf("Training completed with HNSW acceleration\n");
+    printf("Transform operations will be 50-2000x faster\n");
 }
 
 // Cleanup
@@ -524,16 +520,15 @@ enhanced-umap-wrapper/
 - `uwot_fit_with_progress()` - Enhanced training with PQ compression, HNSW tuning, and progress reporting
 - `uwot_transform()` - Fast transform using HNSW + PQ
 - `uwot_transform_detailed()` - Transform with safety metrics
-- `uwot_save_model()` / `uwot_load_model()` - Persistence with HNSW + PQ compression
+- `uwot_save_model()` / `uwot_load_model()` - Persistence with HNSW optimization
 - `uwot_destroy()` - Clean up resources
 
 #### Enhanced Functions (v3.2.0+)
-- `uwot_fit_with_progress(model, data, n_obs, n_dim, embedding_dim, n_neighbors, min_dist, spread, n_epochs, metric, embedding, callback, force_exact_knn, use_quantization, M, ef_construction, ef_search)`
-  - **use_quantization**: Enable 70-80% file size reduction (default: 1)
+- `uwot_fit_with_progress(model, data, n_obs, n_dim, embedding_dim, n_neighbors, min_dist, spread, n_epochs, metric, embedding, callback, force_exact_knn, M, ef_construction, ef_search)`
   - **M**: HNSW graph connectivity (default: auto-scale based on dataset size)
   - **ef_construction**: HNSW build quality (default: auto-scale)
   - **ef_search**: HNSW search speed/accuracy tradeoff (default: auto-scale)
-  - **Progress phases**: "Data Normalization", "HNSW Build", "k-NN Graph", "UMAP Training", "PQ Compression"
+  - **Progress phases**: "Data Normalization", "HNSW Build", "k-NN Graph", "UMAP Training"
 
 #### Utility Functions
 - `uwot_get_model_info()` - Get model parameters
@@ -552,14 +547,6 @@ enhanced-umap-wrapper/
 
 ## Technical Implementation Details
 
-### Product Quantization (PQ) System v3.2.0
-- **4-subspace quantization**: Split 300D vectors into 4×75D subspaces
-- **256 clusters per subspace**: k-means clustering for optimal compression
-- **Compression ratio**: 300×4 bytes → 4×1 bytes = 70-80% file size reduction
-- **Quality preservation**: <5% recall reduction with proper hyperparameter tuning
-- **k-means clustering**: Simple, fast implementation with smart initialization
-- **Reconstruction**: On-demand vector reconstruction from PQ codes
-- **Auto-scaling**: Dataset-aware HNSW parameter optimization
 
 ### HNSW Integration
 - **hnswlib library**: High-performance C++ implementation
@@ -571,11 +558,11 @@ enhanced-umap-wrapper/
 - **PQ integration**: Works seamlessly with compressed vectors
 
 ### Memory Architecture
-- **Training**: Original data → HNSW index → PQ compression (~85-90% total memory reduction)
-- **Transform**: Query → HNSW search → PQ reconstruction → Weighted embedding
-- **Persistence**: Binary serialization with PQ centroids and compressed vectors
+- **Training**: Original data → HNSW index (~80-85% memory reduction)
+- **Transform**: Query → HNSW search → Weighted embedding
+- **Persistence**: Binary serialization with HNSW index
 - **Safety**: Statistical metrics computed on-demand
-- **Model versioning**: v5 format with PQ data and enhanced HNSW parameters
+- **Model versioning**: v5 format with enhanced HNSW parameters
 
 ### Based on uwot Library
 This implementation uses the core algorithms from the [uwot R package](https://github.com/jlmelville/uwot):
@@ -585,14 +572,13 @@ This implementation uses the core algorithms from the [uwot R package](https://g
 - Consistent results with R implementation
 
 ### Enhancements Added
-- **Product Quantization (PQ)** for 70-80% file size reduction with minimal quality loss
 - **HNSW optimization** for 50-2000x faster neighbor search
-- **Comprehensive hyperparameter control** with auto-scaling based on dataset size
+- **Comprehensive HNSW hyperparameter control** with auto-scaling based on dataset size
 - **Enhanced progress reporting** with phase information and time estimates
 - **Comprehensive safety analysis** with 5-level outlier detection
 - **Multiple distance metrics** for k-NN graph construction
 - **Arbitrary embedding dimensions** (1-50D)
-- **Complete model serialization** with HNSW indices and PQ compression
+- **Complete model serialization** with HNSW indices
 - **Cross-platform C# wrapper** with proper memory management
 - **Enhanced error handling** and validation
 - **Production-ready safety features**

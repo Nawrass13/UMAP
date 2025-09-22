@@ -89,8 +89,12 @@ if not exist "..\UMAPuwotSharp\UMAPuwotSharp" (
 
 REM Copy Windows DLL directly to project base folder
 if exist "build-windows\Release\uwot.dll" (
-    copy "build-windows\Release\uwot.dll" "..\UMAPuwotSharp\UMAPuwotSharp\" >nul
-    echo [PASS] Copied Windows uwot.dll to C# project base folder
+    copy "build-windows\Release\uwot.dll" "..\UMAPuwotSharp\UMAPuwotSharp\uwot.dll"
+    if !ERRORLEVEL! EQU 0 (
+        echo [PASS] Copied Windows uwot.dll to C# project base folder
+    ) else (
+        echo [FAIL] Failed to copy Windows uwot.dll - Error: !ERRORLEVEL!
+    )
 ) else (
     echo [FAIL] Windows uwot.dll not found in build-windows\Release\
 )
@@ -102,7 +106,7 @@ REM Try libuwot_final.so first (our guaranteed backup from Docker)
 if exist "build-linux\libuwot_final.so" (
     for %%A in ("build-linux\libuwot_final.so") do (
         if %%~zA GTR 1000 (
-            copy "build-linux\libuwot_final.so" "..\UMAPuwotSharp\UMAPuwotSharp\libuwot.so" >nul
+            copy "build-linux\libuwot_final.so" "..\UMAPuwotSharp\UMAPuwotSharp\libuwot.so"
             echo [PASS] Copied libuwot_final.so as libuwot.so to C# project base folder
             set LINUX_LIB_COPIED=1
             goto :linux_lib_done
@@ -115,7 +119,7 @@ for %%F in (build-linux\libuwot.so.*.*.*) do (
     if exist "%%F" (
         for %%A in ("%%F") do (
             if %%~zA GTR 1000 (
-                copy "%%F" "..\UMAPuwotSharp\UMAPuwotSharp\libuwot.so" >nul
+                copy "%%F" "..\UMAPuwotSharp\UMAPuwotSharp\libuwot.so"
                 echo [PASS] Copied %%~nxF as libuwot.so to C# project base folder
                 set LINUX_LIB_COPIED=1
                 goto :linux_lib_done
@@ -128,7 +132,7 @@ REM Try backup file if available
 if exist "build-linux\libuwot_backup.so" (
     for %%A in ("build-linux\libuwot_backup.so") do (
         if %%~zA GTR 1000 (
-            copy "build-linux\libuwot_backup.so" "..\UMAPuwotSharp\UMAPuwotSharp\libuwot.so" >nul
+            copy "build-linux\libuwot_backup.so" "..\UMAPuwotSharp\UMAPuwotSharp\libuwot.so"
             echo [PASS] Copied libuwot_backup.so as libuwot.so to C# project base folder
             set LINUX_LIB_COPIED=1
             goto :linux_lib_done
@@ -140,9 +144,13 @@ REM Check for libuwot.so (last resort)
 if exist "build-linux\libuwot.so" (
     for %%A in ("build-linux\libuwot.so") do (
         if %%~zA GTR 1000 (
-            copy "build-linux\libuwot.so" "..\UMAPuwotSharp\UMAPuwotSharp\" >nul
-            echo [PASS] Copied Linux libuwot.so to C# project base folder
-            set LINUX_LIB_COPIED=1
+            copy "build-linux\libuwot.so" "..\UMAPuwotSharp\UMAPuwotSharp\libuwot.so"
+            if !ERRORLEVEL! EQU 0 (
+                echo [PASS] Copied Linux libuwot.so to C# project base folder
+                set LINUX_LIB_COPIED=1
+            ) else (
+                echo [FAIL] Failed to copy Linux libuwot.so - Error: !ERRORLEVEL!
+            )
         )
     )
 )
@@ -181,8 +189,7 @@ if exist "build-windows\Release\test_enhanced_wrapper.exe" (
 echo.
 echo Linux libraries (build-linux\):
 if exist "build-linux" (
-    dir build-linux\libuwot.so* build-linux\*.so /B 2>nul | findstr /R ".*" >nul
-    if !ERRORLEVEL! EQU 0 (
+    dir build-linux\libuwot.so* build-linux\*.so /B 2>nul | findstr /R ".*"    if !ERRORLEVEL! EQU 0 (
         echo   [PASS] Linux .so files found:
         for %%F in (build-linux\libuwot.so* build-linux\*.so) do (
             if exist "%%F" (

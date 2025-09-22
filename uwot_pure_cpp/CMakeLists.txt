@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.12)
-project(UMAPWrapper VERSION 2.0.0)
+project(UMAPWrapper VERSION 3.5.0)
 
 # Set C++ standard
 set(CMAKE_CXX_STANDARD 17)
@@ -98,82 +98,36 @@ install(FILES ${UWOT_CORE_HEADERS}
 
 # Tests
 if(BUILD_TESTS)
-    # Enhanced wrapper test (existing)
-    add_executable(test_enhanced_wrapper
-        ${CMAKE_CURRENT_SOURCE_DIR}/enhanced_test.cpp
-    )
-    target_link_libraries(test_enhanced_wrapper uwot_wrapper)
+    add_executable(simple_save_load_test ${CMAKE_CURRENT_SOURCE_DIR}/simple_save_load_test.cpp)
+    target_link_libraries(simple_save_load_test uwot_wrapper)
 
-    # HNSW validation test (comprehensive)
-    add_executable(hnsw_validation_test
-        ${CMAKE_CURRENT_SOURCE_DIR}/hnsw_validation_test.cpp
-    )
-    target_link_libraries(hnsw_validation_test uwot_wrapper)
+    add_executable(debug_large_save_load ${CMAKE_CURRENT_SOURCE_DIR}/debug_large_save_load.cpp)
+    target_link_libraries(debug_large_save_load uwot_wrapper)
 
-    # Comprehensive test with PQ and HNSW benchmarking
-    add_executable(comprehensive_test
-        ${CMAKE_CURRENT_SOURCE_DIR}/comprehensive_test.cpp
-    )
-    target_link_libraries(comprehensive_test uwot_wrapper)
+    add_executable(test_fixed_large_scale ${CMAKE_CURRENT_SOURCE_DIR}/test_fixed_large_scale.cpp)
+    target_link_libraries(test_fixed_large_scale uwot_wrapper)
 
-    # Save/Load fix test with projection consistency
-    add_executable(test_save_load_fix
-        ${CMAKE_CURRENT_SOURCE_DIR}/test_save_load_fix.cpp
-    )
-    target_link_libraries(test_save_load_fix uwot_wrapper)
+    add_executable(test_user_params ${CMAKE_CURRENT_SOURCE_DIR}/test_user_params.cpp)
+    target_link_libraries(test_user_params uwot_wrapper)
 
-    # Simple focused save/load test
-    add_executable(simple_load_save_test
-        ${CMAKE_CURRENT_SOURCE_DIR}/simple_load_save_test.cpp
-    )
-    target_link_libraries(simple_load_save_test uwot_wrapper)
+    add_executable(test_user_exact_params ${CMAKE_CURRENT_SOURCE_DIR}/test_user_exact_params.cpp)
+    target_link_libraries(test_user_exact_params uwot_wrapper)
 
-    # Fit-project-save-load-project-compare test
-    add_executable(fit_project_save_load_test
-        ${CMAKE_CURRENT_SOURCE_DIR}/fit_project_save_load_test.cpp
-    )
-    target_link_libraries(fit_project_save_load_test uwot_wrapper)
+    add_executable(test_hnsw_exact_mse_unified ${CMAKE_CURRENT_SOURCE_DIR}/test_hnsw_exact_mse_unified.cpp)
+    target_link_libraries(test_hnsw_exact_mse_unified uwot_wrapper)
 
-    # Suppress warnings for test executables
-    if(MSVC)
-        target_compile_options(test_enhanced_wrapper PRIVATE
-            /wd4244  # conversion warnings
-            /wd4267  # size_t conversion warnings
-            /wd4566  # unicode character warnings
-        )
-        target_compile_options(hnsw_validation_test PRIVATE
-            /wd4244  # conversion warnings
-            /wd4267  # size_t conversion warnings
-            /wd4566  # unicode character warnings
-        )
-        target_compile_options(comprehensive_test PRIVATE
-            /wd4244  # conversion warnings
-            /wd4267  # size_t conversion warnings
-            /wd4566  # unicode character warnings
-        )
-        target_compile_options(test_save_load_fix PRIVATE
-            /wd4244  # conversion warnings
-            /wd4267  # size_t conversion warnings
-            /wd4566  # unicode character warnings
-        )
-        target_compile_options(simple_load_save_test PRIVATE
-            /wd4244  # conversion warnings
-            /wd4267  # size_t conversion warnings
-            /wd4566  # unicode character warnings
-        )
-        target_compile_options(fit_project_save_load_test PRIVATE
-            /wd4244  # conversion warnings
-            /wd4267  # size_t conversion warnings
-            /wd4566  # unicode character warnings
-        )
+    add_executable(test_realistic_mse ${CMAKE_CURRENT_SOURCE_DIR}/test_realistic_mse.cpp)
+    target_link_libraries(test_realistic_mse uwot_wrapper)
+
+    if(OpenMP_CXX_FOUND)
+        target_link_libraries(simple_save_load_test OpenMP::OpenMP_CXX)
+        target_link_libraries(debug_large_save_load OpenMP::OpenMP_CXX)
+        target_link_libraries(test_fixed_large_scale OpenMP::OpenMP_CXX)
+        target_link_libraries(test_user_params OpenMP::OpenMP_CXX)
+        target_link_libraries(test_user_exact_params OpenMP::OpenMP_CXX)
+        target_link_libraries(test_hnsw_exact_mse_unified OpenMP::OpenMP_CXX)
+        target_link_libraries(test_realistic_mse OpenMP::OpenMP_CXX)
     endif()
-
-    # Add tests
-    enable_testing()
-    add_test(NAME EnhancedWrapperTest COMMAND test_enhanced_wrapper)
-    add_test(NAME HNSWValidationTest COMMAND hnsw_validation_test)
-    add_test(NAME ComprehensiveTest COMMAND comprehensive_test)
-    add_test(NAME SaveLoadFixTest COMMAND test_save_load_fix)
 endif()
 
 # Package configuration

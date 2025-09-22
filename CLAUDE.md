@@ -117,7 +117,41 @@ cmake .. -G "Visual Studio 17 2022" -A x64 -DBUILD_TESTS=ON
 cmake --build . --config Release
 ```
 
-## ⚠️ **CRITICAL REMINDER: Cross-Platform Builds for NuGet**
+## ⚠️ **CRITICAL: Binary Version Management & Cross-Platform Builds**
+
+### 🚨 **BINARY VERSION CHECKING (NEW IN v3.3.0)**
+
+**PROBLEM SOLVED**: Visual Studio, build systems, and copy operations can use wrong/cached DLLs causing:
+- Pipeline inconsistencies
+- Quantization bugs
+- Save/load failures
+- Memory corruption
+
+**SOLUTION**: Automatic DLL version verification prevents binary mismatches!
+
+**Version Management:**
+1. **C++ Version**: Set in `uwot_simple_wrapper.h` - `UWOT_WRAPPER_VERSION_STRING`
+2. **C# Version**: Set in `UMapModel.cs` - `EXPECTED_DLL_VERSION` constant
+3. **Both must match exactly** or constructor throws detailed error
+
+**Version Check Output:**
+```
+✅ DLL Version Check PASSED: 3.3.0   // Success
+❌ CRITICAL DLL VERSION MISMATCH!     // Failure with detailed diagnostics
+```
+
+**Updating Versions:**
+```bash
+# 1. Update C++ version in uwot_simple_wrapper.h
+#define UWOT_WRAPPER_VERSION_STRING "3.4.0"
+
+# 2. Update C# version in UMapModel.cs
+private const string EXPECTED_DLL_VERSION = "3.4.0";
+
+# 3. Rebuild both C++ and C#
+```
+
+### **Cross-Platform Build Requirements**
 
 **🚨 BEFORE PUBLISHING ANY NUGET PACKAGE:**
 1. **ALWAYS run `BuildDockerLinuxWindows.bat`** - NOT just `Buildwindows.bat`
@@ -126,9 +160,9 @@ cmake --build . --config Release
 4. **Fixed in v3.0.1:** Proper Linux library (174KB) with complete HNSW optimization
 
 ### Build Size Verification:
-- **Windows `uwot.dll`**: ~150KB (with HNSW)
-- **Linux `libuwot.so`**: ~174KB (with HNSW)
-- **Old Linux library**: 69KB (WITHOUT HNSW) ❌
+- **Windows `uwot.dll`**: ~220KB (with HNSW + quantization fixes)
+- **Linux `libuwot.so`**: ~174KB+ (with HNSW + quantization fixes)
+- **Old libraries**: <150KB (MISSING features) ❌
 
 ### Required Commands for NuGet Publishing:
 ```bash
@@ -136,7 +170,7 @@ cd uwot_pure_cpp
 BuildDockerLinuxWindows.bat      # Build BOTH platforms with HNSW
 cd ../UMAPuwotSharp/UMAPuwotSharp
 dotnet pack --configuration Release
-# Verify both libraries are ~150KB+ before publishing!
+# Version check will prevent wrong binaries from being used!
 ```
 
 ## ⚠️ **CLAUDE CODE DOCKER BUILD PROTOCOL (CRITICAL)**
@@ -446,6 +480,34 @@ dotnet pack UMAPuwotSharp/UMAPuwotSharp.csproj
 5. **Phase 5**: Performance validation and documentation
 
 ## ⚠️ CRITICAL TESTING GUIDELINES
+
+### **🚨 NEVER TEST ON OLD BINARIES AFTER BUILD ERRORS**
+**CRITICAL LESSON LEARNED**: Testing on old binaries after build failures is worse than not testing at all and leads to completely false results.
+
+**❌ DEADLY MISTAKE PATTERN**:
+```bash
+# Build fails with compilation errors
+cd "C:\UMAP\uwot_pure_cpp\build-test" && cmake --build . --config Release
+# ERROR: syntax errors, compilation fails
+
+# BUT THEN - CATASTROPHIC ERROR - running old binaries anyway:
+cd "C:\UMAP\uwot_pure_cpp\build-test\Release" && ./test_user_params.exe
+# ❌ WRONG - This runs OLD code, not the code with recent changes!
+```
+
+**✅ CORRECT TESTING PROTOCOL**:
+1. **ALWAYS verify build success** before running any tests
+2. **NEVER run tests if compilation failed** - fix compilation first
+3. **Verify binary timestamp** matches recent changes
+4. **Test ONLY on freshly compiled binaries** that include all recent code changes
+5. **If build fails**: Fix the build first, THEN test
+
+**Why This Is Critical**:
+- Old binaries don't contain your recent code changes
+- Test results become completely meaningless
+- You get false confidence that broken code is working
+- Wastes hours debugging "working" code that's actually broken
+- Masks real compilation issues that need immediate fixing
 
 ### **NEVER CREATE FALSE POSITIVE TESTS**
 **CRITICAL LESSON LEARNED**: Tests that don't validate the actual functionality are worse than no tests at all.

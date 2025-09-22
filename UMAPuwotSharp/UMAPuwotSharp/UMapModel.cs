@@ -217,7 +217,7 @@ namespace UMAPuwotSharp
         private static extern int WindowsFit(IntPtr model, float[] data, int nObs, int nDim, int embeddingDim, int nNeighbors, float minDist, float spread, int nEpochs, DistanceMetric metric, float[] embedding, int forceExactKnn);
 
         [DllImport(WindowsDll, CallingConvention = CallingConvention.Cdecl, EntryPoint = "uwot_fit_with_progress_v2")]
-        private static extern int WindowsFitWithProgressV2(IntPtr model, float[] data, int nObs, int nDim, int embeddingDim, int nNeighbors, float minDist, float spread, int nEpochs, DistanceMetric metric, float[] embedding, NativeProgressCallbackV2 progressCallback, int forceExactKnn, int useQuantization, int M, int efConstruction, int efSearch, int pqSubspaces);
+        private static extern int WindowsFitWithProgressV2(IntPtr model, float[] data, int nObs, int nDim, int embeddingDim, int nNeighbors, float minDist, float spread, int nEpochs, DistanceMetric metric, float[] embedding, NativeProgressCallbackV2 progressCallback, int forceExactKnn, int M, int efConstruction, int efSearch);
 
         [DllImport(WindowsDll, CallingConvention = CallingConvention.Cdecl, EntryPoint = "uwot_transform")]
         private static extern int WindowsTransform(IntPtr model, float[] newData, int nNewObs, int nDim, float[] embedding);
@@ -238,7 +238,7 @@ namespace UMAPuwotSharp
         private static extern IntPtr WindowsGetErrorMessage(int errorCode);
 
         [DllImport(WindowsDll, CallingConvention = CallingConvention.Cdecl, EntryPoint = "uwot_get_model_info")]
-        private static extern int WindowsGetModelInfo(IntPtr model, out int nVertices, out int nDim, out int embeddingDim, out int nNeighbors, out float minDist, out float spread, out DistanceMetric metric, out int useQuantization, out int hnswM, out int hnswEfConstruction, out int hnswEfSearch);
+        private static extern int WindowsGetModelInfo(IntPtr model, out int nVertices, out int nDim, out int embeddingDim, out int nNeighbors, out float minDist, out float spread, out DistanceMetric metric, out int hnswM, out int hnswEfConstruction, out int hnswEfSearch);
 
         [DllImport(WindowsDll, CallingConvention = CallingConvention.Cdecl, EntryPoint = "uwot_is_fitted")]
         private static extern int WindowsIsFitted(IntPtr model);
@@ -252,6 +252,9 @@ namespace UMAPuwotSharp
         [DllImport(WindowsDll, CallingConvention = CallingConvention.Cdecl, EntryPoint = "uwot_clear_global_callback")]
         private static extern void WindowsClearGlobalCallback();
 
+        [DllImport(WindowsDll, CallingConvention = CallingConvention.Cdecl, EntryPoint = "uwot_get_version")]
+        private static extern IntPtr WindowsGetVersion();
+
         // Linux P/Invoke declarations
         [DllImport(LinuxDll, CallingConvention = CallingConvention.Cdecl, EntryPoint = "uwot_create")]
         private static extern IntPtr LinuxCreate();
@@ -260,7 +263,7 @@ namespace UMAPuwotSharp
         private static extern int LinuxFit(IntPtr model, float[] data, int nObs, int nDim, int embeddingDim, int nNeighbors, float minDist, float spread, int nEpochs, DistanceMetric metric, float[] embedding, int forceExactKnn);
 
         [DllImport(LinuxDll, CallingConvention = CallingConvention.Cdecl, EntryPoint = "uwot_fit_with_progress_v2")]
-        private static extern int LinuxFitWithProgressV2(IntPtr model, float[] data, int nObs, int nDim, int embeddingDim, int nNeighbors, float minDist, float spread, int nEpochs, DistanceMetric metric, float[] embedding, NativeProgressCallbackV2 progressCallback, int forceExactKnn, int useQuantization, int M, int efConstruction, int efSearch, int pqSubspaces);
+        private static extern int LinuxFitWithProgressV2(IntPtr model, float[] data, int nObs, int nDim, int embeddingDim, int nNeighbors, float minDist, float spread, int nEpochs, DistanceMetric metric, float[] embedding, NativeProgressCallbackV2 progressCallback, int forceExactKnn, int M, int efConstruction, int efSearch);
 
         [DllImport(LinuxDll, CallingConvention = CallingConvention.Cdecl, EntryPoint = "uwot_transform")]
         private static extern int LinuxTransform(IntPtr model, float[] newData, int nNewObs, int nDim, float[] embedding);
@@ -281,7 +284,7 @@ namespace UMAPuwotSharp
         private static extern IntPtr LinuxGetErrorMessage(int errorCode);
 
         [DllImport(LinuxDll, CallingConvention = CallingConvention.Cdecl, EntryPoint = "uwot_get_model_info")]
-        private static extern int LinuxGetModelInfo(IntPtr model, out int nVertices, out int nDim, out int embeddingDim, out int nNeighbors, out float minDist, out float spread, out DistanceMetric metric, out int useQuantization, out int hnswM, out int hnswEfConstruction, out int hnswEfSearch);
+        private static extern int LinuxGetModelInfo(IntPtr model, out int nVertices, out int nDim, out int embeddingDim, out int nNeighbors, out float minDist, out float spread, out DistanceMetric metric, out int hnswM, out int hnswEfConstruction, out int hnswEfSearch);
 
         [DllImport(LinuxDll, CallingConvention = CallingConvention.Cdecl, EntryPoint = "uwot_is_fitted")]
         private static extern int LinuxIsFitted(IntPtr model);
@@ -294,6 +297,16 @@ namespace UMAPuwotSharp
 
         [DllImport(LinuxDll, CallingConvention = CallingConvention.Cdecl, EntryPoint = "uwot_clear_global_callback")]
         private static extern void LinuxClearGlobalCallback();
+
+        [DllImport(LinuxDll, CallingConvention = CallingConvention.Cdecl, EntryPoint = "uwot_get_version")]
+        private static extern IntPtr LinuxGetVersion();
+
+        #endregion
+
+        #region Constants
+
+        // Expected DLL version - must match C++ UWOT_WRAPPER_VERSION_STRING
+        private const string EXPECTED_DLL_VERSION = "3.8.0";
 
         #endregion
 
@@ -333,10 +346,10 @@ namespace UMAPuwotSharp
                 if (!IsFitted)
                     throw new InvalidOperationException("Model must be fitted before accessing model info");
 
-                var result = CallGetModelInfo(_nativeModel, out var nVertices, out var nDim, out var embeddingDim, out var nNeighbors, out var minDist, out var spread, out var metric, out var useQuantization, out var hnswM, out var hnswEfConstruction, out var hnswEfSearch);
+                var result = CallGetModelInfo(_nativeModel, out var nVertices, out var nDim, out var embeddingDim, out var nNeighbors, out var minDist, out var spread, out var metric, out var hnswM, out var hnswEfConstruction, out var hnswEfSearch);
                 ThrowIfError(result);
 
-                return new UMapModelInfo(nVertices, nDim, embeddingDim, nNeighbors, minDist, spread, metric, useQuantization != 0, hnswM, hnswEfConstruction, hnswEfSearch);
+                return new UMapModelInfo(nVertices, nDim, embeddingDim, nNeighbors, minDist, spread, metric, hnswM, hnswEfConstruction, hnswEfSearch);
             }
         }
 
@@ -349,6 +362,9 @@ namespace UMAPuwotSharp
         /// </summary>
         public UMapModel()
         {
+            // CRITICAL: Verify DLL version before any native calls to prevent binary mismatches
+            VerifyDllVersion();
+
             _nativeModel = CallCreate();
             if (_nativeModel == IntPtr.Zero)
                 throw new OutOfMemoryException("Failed to create Enhanced UMAP model");
@@ -451,7 +467,6 @@ namespace UMAPuwotSharp
         /// <param name="nEpochs">Number of optimization epochs (default: 300)</param>
         /// <param name="metric">Distance metric to use (default: Euclidean)</param>
         /// <param name="forceExactKnn">Force exact brute-force k-NN instead of HNSW approximation (default: false). Use for validation or small datasets.</param>
-        /// <param name="useQuantization">Enable Product Quantization for 70-80% memory reduction (default: true)</param>
         /// <param name="hnswM">HNSW graph degree parameter. -1 = auto-scale based on data size (default: -1)</param>
         /// <param name="hnswEfConstruction">HNSW build quality parameter. -1 = auto-scale (default: -1)</param>
         /// <param name="hnswEfSearch">HNSW query quality parameter. -1 = auto-scale (default: -1)</param>
@@ -466,7 +481,6 @@ namespace UMAPuwotSharp
                           int nEpochs = 300,
                           DistanceMetric metric = DistanceMetric.Euclidean,
                           bool forceExactKnn = false,
-                          bool useQuantization = true,
                           int hnswM = -1,
                           int hnswEfConstruction = -1,
                           int hnswEfSearch = -1)
@@ -476,7 +490,7 @@ namespace UMAPuwotSharp
             float actualMinDist = minDist ?? CalculateOptimalMinDist(embeddingDimension);
             float actualSpread = spread ?? CalculateOptimalSpread(embeddingDimension);
 
-            return FitInternal(data, embeddingDimension, actualNeighbors, actualMinDist, actualSpread, nEpochs, metric, forceExactKnn, progressCallback: null, pqSubspaces: null);
+            return FitInternal(data, embeddingDimension, actualNeighbors, actualMinDist, actualSpread, nEpochs, metric, forceExactKnn, progressCallback: null);
         }
 
         /// <summary>
@@ -502,8 +516,7 @@ namespace UMAPuwotSharp
                                       float? spread = null,
                                       int nEpochs = 300,
                                       DistanceMetric metric = DistanceMetric.Euclidean,
-                                      bool forceExactKnn = false,
-                                      int? pqSubspaces = null)
+                                      bool forceExactKnn = false)
         {
             if (progressCallback == null)
                 throw new ArgumentNullException(nameof(progressCallback));
@@ -513,7 +526,7 @@ namespace UMAPuwotSharp
             float actualMinDist = minDist ?? CalculateOptimalMinDist(embeddingDimension);
             float actualSpread = spread ?? CalculateOptimalSpread(embeddingDimension);
 
-            return FitInternal(data, embeddingDimension, actualNeighbors, actualMinDist, actualSpread, nEpochs, metric, forceExactKnn, progressCallback, pqSubspaces);
+            return FitInternal(data, embeddingDimension, actualNeighbors, actualMinDist, actualSpread, nEpochs, metric, forceExactKnn, progressCallback);
         }
 
         /// <summary>
@@ -558,7 +571,13 @@ namespace UMAPuwotSharp
 
             // Call native function
             var result = CallTransform(_nativeModel, flatNewData, nNewSamples, nFeatures, embedding);
-            ThrowIfError(result);
+
+            // CRITICAL: Check for error BEFORE processing results
+            if (result != UWOT_SUCCESS)
+            {
+                var errorMessage = CallGetErrorMessage(result);
+                throw new InvalidOperationException($"Transform failed with error {result}: {errorMessage}. This usually indicates normalization parameter mismatch between fit/save and load operations.");
+            }
 
             // Convert back to 2D array
             return ConvertTo2D(embedding, nNewSamples, modelInfo.OutputDimension);
@@ -615,7 +634,13 @@ namespace UMAPuwotSharp
             var result = CallTransformDetailed(_nativeModel, flatNewData, nNewSamples, nFeatures,
                                              embedding, nnIndices, nnDistances, confidenceScores,
                                              outlierLevels, percentileRanks, zScores);
-            ThrowIfError(result);
+
+            // CRITICAL: Check for error BEFORE processing results
+            if (result != UWOT_SUCCESS)
+            {
+                var errorMessage = CallGetErrorMessage(result);
+                throw new InvalidOperationException($"Transform failed with error {result}: {errorMessage}. This usually indicates normalization parameter mismatch between fit/save and load operations.");
+            }
 
             // Create TransformResult objects
             var results = new TransformResult[nNewSamples];
@@ -698,8 +723,7 @@ namespace UMAPuwotSharp
                                    int nEpochs,
                                    DistanceMetric metric,
                                    bool forceExactKnn,
-                                   ProgressCallback? progressCallback,
-                                   int? pqSubspaces = null)
+                                   ProgressCallback? progressCallback)
         {
             if (data == null)
                 throw new ArgumentNullException(nameof(data));
@@ -752,11 +776,13 @@ namespace UMAPuwotSharp
                     }
                 };
 
-                result = CallFitWithProgressV2(_nativeModel, flatData, nSamples, nFeatures, embeddingDimension, nNeighbors, minDist, spread, nEpochs, metric, embedding, nativeCallback, forceExactKnn ? 1 : 0, 1, -1, -1, -1, pqSubspaces ?? -1);
+                result = CallFitWithProgressV2(_nativeModel, flatData, nSamples, nFeatures, embeddingDimension, nNeighbors, minDist, spread, nEpochs, metric, embedding, nativeCallback, forceExactKnn ? 1 : 0, -1, -1, -1);
             }
             else
             {
-                result = CallFit(_nativeModel, flatData, nSamples, nFeatures, embeddingDimension, nNeighbors, minDist, spread, nEpochs, metric, embedding, forceExactKnn ? 1 : 0);
+                // CRITICAL FIX: Always use unified pipeline function (even without progress callback)
+                // to ensure HNSW and exact use same normalized data - prevents MSE ~74 issue
+                result = CallFitWithProgressV2(_nativeModel, flatData, nSamples, nFeatures, embeddingDimension, nNeighbors, minDist, spread, nEpochs, metric, embedding, null, forceExactKnn ? 1 : 0, -1, -1, -1);
             }
 
             ThrowIfError(result);
@@ -783,10 +809,10 @@ namespace UMAPuwotSharp
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static int CallFitWithProgressV2(IntPtr model, float[] data, int nObs, int nDim, int embeddingDim, int nNeighbors, float minDist, float spread, int nEpochs, DistanceMetric metric, float[] embedding, NativeProgressCallbackV2 progressCallback, int forceExactKnn, int useQuantization, int M, int efConstruction, int efSearch, int pqSubspaces)
+        private static int CallFitWithProgressV2(IntPtr model, float[] data, int nObs, int nDim, int embeddingDim, int nNeighbors, float minDist, float spread, int nEpochs, DistanceMetric metric, float[] embedding, NativeProgressCallbackV2 progressCallback, int forceExactKnn, int M, int efConstruction, int efSearch)
         {
-            return IsWindows ? WindowsFitWithProgressV2(model, data, nObs, nDim, embeddingDim, nNeighbors, minDist, spread, nEpochs, metric, embedding, progressCallback, forceExactKnn, useQuantization, M, efConstruction, efSearch, pqSubspaces)
-                             : LinuxFitWithProgressV2(model, data, nObs, nDim, embeddingDim, nNeighbors, minDist, spread, nEpochs, metric, embedding, progressCallback, forceExactKnn, useQuantization, M, efConstruction, efSearch, pqSubspaces);
+            return IsWindows ? WindowsFitWithProgressV2(model, data, nObs, nDim, embeddingDim, nNeighbors, minDist, spread, nEpochs, metric, embedding, progressCallback, forceExactKnn, M, efConstruction, efSearch)
+                             : LinuxFitWithProgressV2(model, data, nObs, nDim, embeddingDim, nNeighbors, minDist, spread, nEpochs, metric, embedding, progressCallback, forceExactKnn, M, efConstruction, efSearch);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -830,10 +856,10 @@ namespace UMAPuwotSharp
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static int CallGetModelInfo(IntPtr model, out int nVertices, out int nDim, out int embeddingDim, out int nNeighbors, out float minDist, out float spread, out DistanceMetric metric, out int useQuantization, out int hnswM, out int hnswEfConstruction, out int hnswEfSearch)
+        private static int CallGetModelInfo(IntPtr model, out int nVertices, out int nDim, out int embeddingDim, out int nNeighbors, out float minDist, out float spread, out DistanceMetric metric, out int hnswM, out int hnswEfConstruction, out int hnswEfSearch)
         {
-            return IsWindows ? WindowsGetModelInfo(model, out nVertices, out nDim, out embeddingDim, out nNeighbors, out minDist, out spread, out metric, out useQuantization, out hnswM, out hnswEfConstruction, out hnswEfSearch)
-                             : LinuxGetModelInfo(model, out nVertices, out nDim, out embeddingDim, out nNeighbors, out minDist, out spread, out metric, out useQuantization, out hnswM, out hnswEfConstruction, out hnswEfSearch);
+            return IsWindows ? WindowsGetModelInfo(model, out nVertices, out nDim, out embeddingDim, out nNeighbors, out minDist, out spread, out metric, out hnswM, out hnswEfConstruction, out hnswEfSearch)
+                             : LinuxGetModelInfo(model, out nVertices, out nDim, out embeddingDim, out nNeighbors, out minDist, out spread, out metric, out hnswM, out hnswEfConstruction, out hnswEfSearch);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -882,6 +908,67 @@ namespace UMAPuwotSharp
                 UWOT_ERROR_INVALID_MODEL_FILE => new InvalidDataException(message),
                 _ => new Exception($"UMAP Error ({errorCode}): {message}")
             };
+        }
+
+        /// <summary>
+        /// Verifies the native DLL version matches the expected C# wrapper version
+        /// </summary>
+        /// <exception cref="InvalidOperationException">Thrown when DLL version mismatch detected</exception>
+        private static void VerifyDllVersion()
+        {
+            try
+            {
+                // Get version string from native DLL
+                IntPtr versionPtr = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
+                    ? WindowsGetVersion()
+                    : LinuxGetVersion();
+
+                if (versionPtr == IntPtr.Zero)
+                {
+                    throw new InvalidOperationException(
+                        $"❌ CRITICAL: Failed to get DLL version. This indicates a binary mismatch or corrupted DLL.\n" +
+                        $"Expected version: {EXPECTED_DLL_VERSION}\n" +
+                        $"Please ensure the correct uwot.dll/libuwot.so is in the application directory.");
+                }
+
+                string actualVersion = Marshal.PtrToStringAnsi(versionPtr) ?? "unknown";
+
+                if (actualVersion != EXPECTED_DLL_VERSION)
+                {
+                    throw new InvalidOperationException(
+                        $"❌ CRITICAL DLL VERSION MISMATCH DETECTED!\n" +
+                        $"Expected C# wrapper version: {EXPECTED_DLL_VERSION}\n" +
+                        $"Actual native DLL version:    {actualVersion}\n" +
+                        $"\n" +
+                        $"This mismatch can cause:\n" +
+                        $"• Pipeline inconsistencies\n" +
+                        $"• Save/load failures\n" +
+                        $"• Memory corruption\n" +
+                        $"\n" +
+                        $"SOLUTION: Rebuild the native library or copy the correct DLL version.\n" +
+                        $"Platform: {(RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "Windows" : "Linux")}");
+                }
+
+                // Success - log the version match for debugging
+                Console.WriteLine($"✅ DLL Version Check PASSED: {actualVersion}");
+            }
+            catch (DllNotFoundException ex)
+            {
+                throw new DllNotFoundException(
+                    $"❌ CRITICAL: Native UMAP library not found!\n" +
+                    $"Expected: {(RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "uwot.dll" : "libuwot.so")}\n" +
+                    $"Platform: {RuntimeInformation.OSArchitecture} on {RuntimeInformation.OSDescription}\n" +
+                    $"Ensure the native library is in the application directory.\n" +
+                    $"Original error: {ex.Message}");
+            }
+            catch (EntryPointNotFoundException ex)
+            {
+                throw new InvalidOperationException(
+                    $"❌ CRITICAL: DLL is missing version function!\n" +
+                    $"This indicates an old or incompatible DLL version.\n" +
+                    $"Expected version: {EXPECTED_DLL_VERSION}\n" +
+                    $"Original error: {ex.Message}");
+            }
         }
 
         private static float[,] ConvertTo2D(float[] flatArray, int rows, int cols)
@@ -1022,10 +1109,6 @@ namespace UMAPuwotSharp
         /// </summary>
         public DistanceMetric Metric { get; }
 
-        /// <summary>
-        /// Gets whether Product Quantization is enabled for memory optimization
-        /// </summary>
-        public bool UseQuantization { get; }
 
         /// <summary>
         /// Gets the HNSW graph degree parameter (controls connectivity)
@@ -1047,7 +1130,7 @@ namespace UMAPuwotSharp
         /// </summary>
         public string MetricName => UMapModel.GetMetricName(Metric);
 
-        internal UMapModelInfo(int trainingSamples, int inputDimension, int outputDimension, int neighbors, float minimumDistance, float spread, DistanceMetric metric, bool useQuantization, int hnswM, int hnswEfConstruction, int hnswEfSearch)
+        internal UMapModelInfo(int trainingSamples, int inputDimension, int outputDimension, int neighbors, float minimumDistance, float spread, DistanceMetric metric, int hnswM, int hnswEfConstruction, int hnswEfSearch)
         {
             TrainingSamples = trainingSamples;
             InputDimension = inputDimension;
@@ -1056,7 +1139,6 @@ namespace UMAPuwotSharp
             MinimumDistance = minimumDistance;
             Spread = spread;
             Metric = metric;
-            UseQuantization = useQuantization;
             HnswM = hnswM;
             HnswEfConstruction = hnswEfConstruction;
             HnswEfSearch = hnswEfSearch;
@@ -1070,7 +1152,7 @@ namespace UMAPuwotSharp
         {
             return $"Enhanced UMAP Model: {TrainingSamples} samples, {InputDimension}D → {OutputDimension}D, " +
                    $"k={Neighbors}, min_dist={MinimumDistance:F3}, spread={Spread:F3}, metric={MetricName}, " +
-                   $"PQ={UseQuantization}, HNSW(M={HnswM}, ef_c={HnswEfConstruction}, ef_s={HnswEfSearch})";
+                   $"HNSW(M={HnswM}, ef_c={HnswEfConstruction}, ef_s={HnswEfSearch})";
         }
     }
 }

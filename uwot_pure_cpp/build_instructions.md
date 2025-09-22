@@ -217,14 +217,14 @@ The test suite automatically validates:
 ## Integration with C# Project
 
 ### Copy Built Libraries
-After successful build, copy libraries to C# runtime folders:
+After successful build, copy libraries to C# project root folder:
 
 ```bash
 # Windows
-cp build/Release/uwot.dll ../UMAPuwotSharp/UMAPuwotSharp/runtimes/win-x64/native/
+cp build/Release/uwot.dll ../UMAPuwotSharp/UMAPuwotSharp/
 
 # Linux
-cp build/libuwot.so ../UMAPuwotSharp/UMAPuwotSharp/runtimes/linux-x64/native/
+cp build/libuwot.so ../UMAPuwotSharp/UMAPuwotSharp/libuwot.so
 ```
 
 ### Test C# Integration
