@@ -2091,7 +2091,6 @@ extern "C" {
             return UWOT_ERROR_MEMORY;
         }
     }
-
     UWOT_API int uwot_transform_detailed(
         UwotModel* model,
         float* new_data,
@@ -2105,32 +2104,6 @@ extern "C" {
         float* percentile_rank,
         float* z_score
     ) {
-        // --- Change Explanation ---
-        // Modified the exact match threshold from 1e-6f * sqrt(n_dim) to 1e-4f * sqrt(n_dim)
-        // to improve detection of identical training points, accounting for floating-point errors
-        // in high-dimensional data. This ensures training points return their exact training
-        // embeddings, reducing discrepancies with model->embedding. No changes to HNSW ef_search,
-        // as it already implements solution #2 (max(original_ef, n_neighbors * 4)). HNSW seed
-        // (#4) is noted for implementation in uwot_fit_with_progress_v2 if supported.
-
-        // --- Detailed Explanation ---
-        // 1. Exact Match Threshold (#1): Changed to 1e-4f * sqrt(n_dim) to capture near-identical
-        //    points (e.g., threshold ~0.01 for n_dim=100, ~0.1 for n_dim=10k), preventing false
-        //    negatives due to numerical precision in normalization or distance sums. This ensures
-        //    transform outputs match fit embeddings for training data ~99% of the time.
-        // 2. HNSW Search Quality (#2): Retained existing logic setting ef to
-        //    max(original_ef, n_neighbors * 4) for high neighbor recall (>99%), reducing
-        //    stochasticity in neighbor selection. Critical for exact match detection.
-        // 3. HNSW Seed (#4): Standard hnswlib lacks public setSeed. If supported, set
-        //    model->ann_index->setSeed(42) in uwot_fit_with_progress_v2 after index creation.
-        //    Here, we rely on high ef_search for consistency.
-        // 4. Why #6 Was Illogical: Reusing model->nn_weights requires mapping inputs to training
-        //    indices, adding complexity without clear benefits over #1 and #2. It’s impractical
-        //    for non-training points and unnecessary given exact match improvements.
-        // Impact: Training points should match model->embedding closely; non-training points use
-        // weighted averaging as before. Test by comparing embedding outputs (expect max diff <1e-4).
-        // If discrepancies persist, try match_threshold = 1e-3f * sqrt(n_dim) or verify normalization.
-
         if (!model || !model->is_fitted || !new_data || !embedding ||
             n_new_obs <= 0 || n_dim != model->n_dim) {
             return UWOT_ERROR_INVALID_PARAMS;
@@ -2159,9 +2132,13 @@ extern "C" {
                     return UWOT_ERROR_MODEL_NOT_FITTED;
                 }
 
-                // Solution #2: Boost HNSW search quality for transform
+                // FIX #1: Significantly boost ef_search for high-dimensional data with small n_neighbors
                 size_t original_ef = model->ann_index->ef_;
-                model->ann_index->setEf(std::max(original_ef, static_cast<size_t>(model->n_neighbors * 4))); // At least 4x neighbors for 99% recall
+                // For high dimensions and small n_neighbors, we need much higher ef_search
+                size_t boosted_ef = static_cast<size_t>(model->n_neighbors * 32); // Aggressive boost
+                // Cap at a reasonable maximum to avoid excessive computation
+                boosted_ef = std::min(boosted_ef, static_cast<size_t>(400));
+                model->ann_index->setEf(std::max(original_ef, boosted_ef));
 
                 // Use HNSW to find nearest neighbors
                 auto search_result = model->ann_index->searchKnn(normalized_point.data(), model->n_neighbors);
@@ -2177,8 +2154,10 @@ extern "C" {
                 bool exact_match_found = false;
                 int exact_match_idx = -1;
 
-                // Solution #1: Relaxed exact-match threshold
-                float match_threshold = 1e-4f * std::sqrt(static_cast<float>(n_dim));
+                // FIX #2: Much stricter exact match threshold for high dimensions
+                // Use a more conservative scaling for high-dimensional spaces
+                float match_threshold = 1e-6f * std::pow(static_cast<float>(n_dim), 0.3f);
+                // For n_dim=350, this gives ~1e-6 * 5.5 = 0.0000055 (much stricter than before)
 
                 // Extract neighbors and compute detailed statistics
                 while (!search_result.empty()) {
@@ -2210,13 +2189,15 @@ extern "C" {
                         exact_match_idx = neighbor_idx;
                     }
 
-                    // CRITICAL FIX: Use adaptive bandwidth that scales with actual distances
-                    float base_bandwidth = std::max(0.5f, model->mean_neighbor_distance * 0.75f);
+                    // FIX #3: Adjust bandwidth calculation for high min_dist
+                    // Use a more conservative approach for high min_dist
+                    float base_bandwidth = std::max(model->min_dist * 0.25f, model->mean_neighbor_distance * 0.5f);
+                    // For min_dist=0.54, this ensures base_bandwidth is at least 0.135
 
                     // For very distant points, increase bandwidth to prevent total weight collapse
                     float adaptive_bandwidth = base_bandwidth;
                     if (distance > base_bandwidth * 2.0f) {
-                        adaptive_bandwidth = distance * 0.5f; // Scale bandwidth with distance for distant points
+                        adaptive_bandwidth = distance * 0.3f; // More conservative scaling
                     }
 
                     float weight = std::exp(-distance * distance / (2.0f * adaptive_bandwidth * adaptive_bandwidth));
