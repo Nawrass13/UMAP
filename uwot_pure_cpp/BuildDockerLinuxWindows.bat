@@ -81,6 +81,18 @@ if exist "test_comprehensive_pipeline.exe" (
     echo [WARN] test_comprehensive_pipeline.exe not found
 )
 
+if exist "test_enhanced_wrapper.exe" (
+    echo [TEST] Running legacy enhanced wrapper test...
+    test_enhanced_wrapper.exe
+    if !ERRORLEVEL! EQU 0 (
+        echo [PASS] Enhanced wrapper test PASSED
+    ) else (
+        echo [WARN] Enhanced wrapper test FAILED with code !ERRORLEVEL! (legacy test may be outdated)
+    )
+) else (
+    echo [WARN] test_enhanced_wrapper.exe not found
+)
+
 cd ..
 if !WIN_ALL_TESTS_PASSED! EQU 1 (
     echo [PASS] ALL Windows tests completed successfully

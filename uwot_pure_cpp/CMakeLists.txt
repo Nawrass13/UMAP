@@ -128,6 +128,13 @@ if(BUILD_TESTS)
     if(OpenMP_CXX_FOUND)
         target_link_libraries(test_standard_comprehensive OpenMP::OpenMP_CXX)
     endif()
+
+    # Legacy enhanced test (may need updates for current architecture)
+    add_executable(test_enhanced_wrapper enhanced_test.cpp)
+    target_link_libraries(test_enhanced_wrapper uwot_wrapper)
+    if(OpenMP_CXX_FOUND)
+        target_link_libraries(test_enhanced_wrapper OpenMP::OpenMP_CXX)
+    endif()
 endif()
 
 # Package configuration
