@@ -1,7 +1,0 @@
-C:/UMAP/uwot_pure_cpp/build-test/CMakeFiles/uwot_wrapper.dir
-C:/UMAP/uwot_pure_cpp/build-test/CMakeFiles/test_error_fixes_simple.dir
-C:/UMAP/uwot_pure_cpp/build-test/CMakeFiles/test_comprehensive_pipeline.dir
-C:/UMAP/uwot_pure_cpp/build-test/CMakeFiles/test_standard_comprehensive.dir
-C:/UMAP/uwot_pure_cpp/build-test/CMakeFiles/INSTALL.dir
-C:/UMAP/uwot_pure_cpp/build-test/CMakeFiles/ALL_BUILD.dir
-C:/UMAP/uwot_pure_cpp/build-test/CMakeFiles/ZERO_CHECK.dir
