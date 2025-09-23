@@ -8,7 +8,13 @@
       <FullPath>C:\UMAP\uwot_pure_cpp\build-test\Release\uwot.dll</FullPath>
     </ProjectOutput>
     <ProjectOutput>
+      <FullPath>C:\UMAP\uwot_pure_cpp\build-test\Release\test_comprehensive_pipeline.exe</FullPath>
+    </ProjectOutput>
+    <ProjectOutput>
       <FullPath>C:\UMAP\uwot_pure_cpp\build-test\Release\test_error_fixes_simple.exe</FullPath>
+    </ProjectOutput>
+    <ProjectOutput>
+      <FullPath>C:\UMAP\uwot_pure_cpp\build-test\Release\test_standard_comprehensive.exe</FullPath>
     </ProjectOutput>
     <ProjectOutput>
       <FullPath>C:\UMAP\uwot_pure_cpp\build-test\x64\Release\ALL_BUILD</FullPath>

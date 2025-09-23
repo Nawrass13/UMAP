@@ -1,4 +1,10 @@
 C:\UMAP\uwot_pure_cpp\uwot_simple_wrapper.cpp;C:\UMAP\uwot_pure_cpp\build-test\uwot_wrapper.dir\Release\uwot_simple_wrapper.obj
 C:\UMAP\uwot_pure_cpp\uwot_progress_utils.cpp;C:\UMAP\uwot_pure_cpp\build-test\uwot_wrapper.dir\Release\uwot_progress_utils.obj
 C:\UMAP\uwot_pure_cpp\uwot_hnsw_utils.cpp;C:\UMAP\uwot_pure_cpp\build-test\uwot_wrapper.dir\Release\uwot_hnsw_utils.obj
+C:\UMAP\uwot_pure_cpp\uwot_model.cpp;C:\UMAP\uwot_pure_cpp\build-test\uwot_wrapper.dir\Release\uwot_model.obj
+C:\UMAP\uwot_pure_cpp\uwot_persistence.cpp;C:\UMAP\uwot_pure_cpp\build-test\uwot_wrapper.dir\Release\uwot_persistence.obj
+C:\UMAP\uwot_pure_cpp\uwot_fit.cpp;C:\UMAP\uwot_pure_cpp\build-test\uwot_wrapper.dir\Release\uwot_fit.obj
+C:\UMAP\uwot_pure_cpp\uwot_transform.cpp;C:\UMAP\uwot_pure_cpp\build-test\uwot_wrapper.dir\Release\uwot_transform.obj
+C:\UMAP\uwot_pure_cpp\uwot_quantization.cpp;C:\UMAP\uwot_pure_cpp\build-test\uwot_wrapper.dir\Release\uwot_quantization.obj
+C:\UMAP\uwot_pure_cpp\uwot_distance.cpp;C:\UMAP\uwot_pure_cpp\build-test\uwot_wrapper.dir\Release\uwot_distance.obj
 C:\UMAP\uwot_pure_cpp\lz4.c;C:\UMAP\uwot_pure_cpp\build-test\uwot_wrapper.dir\Release\lz4.obj

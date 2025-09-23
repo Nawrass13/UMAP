@@ -811,8 +811,10 @@ namespace UMAPuwotSharp
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static int CallFitWithProgressV2(IntPtr model, float[] data, int nObs, int nDim, int embeddingDim, int nNeighbors, float minDist, float spread, int nEpochs, DistanceMetric metric, float[] embedding, NativeProgressCallbackV2? progressCallback, int forceExactKnn, int M, int efConstruction, int efSearch)
         {
-            return IsWindows ? WindowsFitWithProgressV2(model, data, nObs, nDim, embeddingDim, nNeighbors, minDist, spread, nEpochs, metric, embedding, progressCallback, forceExactKnn, M, efConstruction, efSearch)
-                             : LinuxFitWithProgressV2(model, data, nObs, nDim, embeddingDim, nNeighbors, minDist, spread, nEpochs, metric, embedding, progressCallback, forceExactKnn, M, efConstruction, efSearch);
+            // Use null-coalescing to provide a default no-op callback if progressCallback is null
+            var callback = progressCallback ?? ((phase, current, total, percent, message) => { });
+            return IsWindows ? WindowsFitWithProgressV2(model, data, nObs, nDim, embeddingDim, nNeighbors, minDist, spread, nEpochs, metric, embedding, callback, forceExactKnn, M, efConstruction, efSearch)
+                             : LinuxFitWithProgressV2(model, data, nObs, nDim, embeddingDim, nNeighbors, minDist, spread, nEpochs, metric, embedding, callback, forceExactKnn, M, efConstruction, efSearch);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

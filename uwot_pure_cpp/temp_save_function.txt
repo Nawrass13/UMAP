@@ -1,0 +1,154 @@
+    UWOT_API int uwot_save_model(UwotModel* model, const char* filename) {
+        if (!model || !model->is_fitted || !filename) {
+            return UWOT_ERROR_INVALID_PARAMS;
+        }
+
+        // DEBUG: Print model state before saving
+        printf("🔍 DEBUG SAVE - Model state before saving:\n");
+        printf("  - n_vertices: %d\n", model->n_vertices);
+        printf("  - embedding_dim: %d\n", model->embedding_dim);
+        printf("  - embedding.size(): %zu\n", model->embedding.size());
+        printf("  - mean_neighbor_distance: %.6f\n", model->mean_neighbor_distance);
+        printf("  - std_neighbor_distance: %.6f\n", model->std_neighbor_distance);
+        printf("  - HNSW Settings: M=%d, ef_c=%d, ef_s=%d\n", model->hnsw_M, model->hnsw_ef_construction, model->hnsw_ef_search);
+        printf("  - First 20 embedding points:\n");
+        for (int i = 0; i < std::min(20, model->n_vertices); i++) {
+            printf("    Point %d: [%.6f, %.6f]\n", i,
+                model->embedding[i * model->embedding_dim],
+                model->embedding[i * model->embedding_dim + 1]);
+        }
+
+        try {
+            std::ofstream file(filename, std::ios::binary);
+            if (!file.is_open()) {
+                return UWOT_ERROR_FILE_IO;
+            }
+
+            // Write header
+            const char* magic = "UMAP";
+            file.write(magic, 4);
+            int version = 7; // Version 7: Include normalization mode for unified pipeline
+            file.write(reinterpret_cast<const char*>(&version), sizeof(int));
+
+            // Write model parameters
+            file.write(reinterpret_cast<const char*>(&model->n_vertices), sizeof(int));
+            file.write(reinterpret_cast<const char*>(&model->n_dim), sizeof(int));
+            file.write(reinterpret_cast<const char*>(&model->embedding_dim), sizeof(int));
+            file.write(reinterpret_cast<const char*>(&model->n_neighbors), sizeof(int));
+            file.write(reinterpret_cast<const char*>(&model->min_dist), sizeof(float));
+            file.write(reinterpret_cast<const char*>(&model->spread), sizeof(float));
+            file.write(reinterpret_cast<const char*>(&model->metric), sizeof(UwotMetric));
+            file.write(reinterpret_cast<const char*>(&model->a), sizeof(float));
+            file.write(reinterpret_cast<const char*>(&model->b), sizeof(float));
+            file.write(reinterpret_cast<const char*>(&model->use_normalization), sizeof(bool));
+            file.write(reinterpret_cast<const char*>(&model->normalization_mode), sizeof(int));
+
+            // Write HNSW hyperparameters (version 7+)
+            file.write(reinterpret_cast<const char*>(&model->hnsw_M), sizeof(int));
+            file.write(reinterpret_cast<const char*>(&model->hnsw_ef_construction), sizeof(int));
+            file.write(reinterpret_cast<const char*>(&model->hnsw_ef_search), sizeof(int));
+
+            // Write normalization parameters
+            size_t means_size = model->feature_means.size();
+            file.write(reinterpret_cast<const char*>(&means_size), sizeof(size_t));
+            file.write(reinterpret_cast<const char*>(model->feature_means.data()),
+                means_size * sizeof(float));
+
+            size_t stds_size = model->feature_stds.size();
+            file.write(reinterpret_cast<const char*>(&stds_size), sizeof(size_t));
+            file.write(reinterpret_cast<const char*>(model->feature_stds.data()),
+                stds_size * sizeof(float));
+
+            // Write neighbor statistics
+            file.write(reinterpret_cast<const char*>(&model->min_neighbor_distance), sizeof(float));
+            file.write(reinterpret_cast<const char*>(&model->mean_neighbor_distance), sizeof(float));
+            file.write(reinterpret_cast<const char*>(&model->std_neighbor_distance), sizeof(float));
+            file.write(reinterpret_cast<const char*>(&model->p95_neighbor_distance), sizeof(float));
+            file.write(reinterpret_cast<const char*>(&model->p99_neighbor_distance), sizeof(float));
+            file.write(reinterpret_cast<const char*>(&model->mild_outlier_threshold), sizeof(float));
+            file.write(reinterpret_cast<const char*>(&model->extreme_outlier_threshold), sizeof(float));
+
+            // Fix 7: Save new fields for robust threshold and bandwidth calculations
+            file.write(reinterpret_cast<const char*>(&model->median_neighbor_distance), sizeof(float));
+            file.write(reinterpret_cast<const char*>(&model->exact_match_threshold), sizeof(float));
+
+            // Write embedding
+            size_t embedding_size = model->embedding.size();
+            file.write(reinterpret_cast<const char*>(&embedding_size), sizeof(size_t));
+            file.write(reinterpret_cast<const char*>(model->embedding.data()),
+                embedding_size * sizeof(float));
+
+            // CRITICAL FIX 4: Always save k-NN data for exact reproducibility
+            // Since HNSW indices are inherently non-deterministic, we need fallback k-NN data
+            // to ensure perfect consistency between original fit and loaded model transforms
+            bool needs_knn = true;  // Always save k-NN data for exact transforms
+            file.write(reinterpret_cast<const char*>(&needs_knn), sizeof(bool));
+
+            printf("🔍 DEBUG SAVE - Always saving k-NN data for exact reproducibility\n");
+
+            if (needs_knn) {
+                // Save k-NN data for fallback transforms
+                size_t nn_indices_size = model->nn_indices.size();
+                file.write(reinterpret_cast<const char*>(&nn_indices_size), sizeof(size_t));
+                if (nn_indices_size > 0) {
+                    file.write(reinterpret_cast<const char*>(model->nn_indices.data()),
+                        nn_indices_size * sizeof(int));
+                }
+
+                size_t nn_distances_size = model->nn_distances.size();
+                file.write(reinterpret_cast<const char*>(&nn_distances_size), sizeof(size_t));
+                if (nn_distances_size > 0) {
+                    file.write(reinterpret_cast<const char*>(model->nn_distances.data()),
+                        nn_distances_size * sizeof(float));
+                }
+
+                size_t nn_weights_size = model->nn_weights.size();
+                file.write(reinterpret_cast<const char*>(&nn_weights_size), sizeof(size_t));
+                if (nn_weights_size > 0) {
+                    file.write(reinterpret_cast<const char*>(model->nn_weights.data()),
+                        nn_weights_size * sizeof(float));
+                }
+            }
+
+            // Save HNSW index directly to stream (no temporary files)
+            if (model->ann_index) {
+                try {
+                    // Capture current position to calculate size later
+                    std::streampos hnsw_size_pos = file.tellp();
+                    size_t placeholder_size = 0;
+                    file.write(reinterpret_cast<const char*>(&placeholder_size), sizeof(size_t));
+
+                    std::streampos hnsw_data_start = file.tellp();
+
+                    // Save HNSW index data with LZ4 compression for reduced file size
+                    save_hnsw_to_stream_compressed(file, model->ann_index.get());
+
+                    std::streampos hnsw_data_end = file.tellp();
+
+                    // Calculate actual size and update the placeholder
+                    size_t actual_hnsw_size = static_cast<size_t>(hnsw_data_end - hnsw_data_start);
+                    file.seekp(hnsw_size_pos);
+                    file.write(reinterpret_cast<const char*>(&actual_hnsw_size), sizeof(size_t));
+                    file.seekp(hnsw_data_end);
+
+                }
+                catch (...) {
+                    // Error saving HNSW, write zero size
+                    size_t hnsw_size = 0;
+                    file.write(reinterpret_cast<const char*>(&hnsw_size), sizeof(size_t));
+                }
+            }
+            else {
+                size_t hnsw_size = 0;
+                file.write(reinterpret_cast<const char*>(&hnsw_size), sizeof(size_t));
+            }
+
+            file.close();
+            return UWOT_SUCCESS;
+
+        }
+        catch (...) {
+            return UWOT_ERROR_FILE_IO;
+        }
+    }
+

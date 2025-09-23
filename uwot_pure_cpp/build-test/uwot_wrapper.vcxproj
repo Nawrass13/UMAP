@@ -333,6 +333,12 @@ if %errorlevel% neq 0 goto :VCEnd</Command>
     <ClCompile Include="C:\UMAP\uwot_pure_cpp\uwot_simple_wrapper.cpp" />
     <ClCompile Include="C:\UMAP\uwot_pure_cpp\uwot_progress_utils.cpp" />
     <ClCompile Include="C:\UMAP\uwot_pure_cpp\uwot_hnsw_utils.cpp" />
+    <ClCompile Include="C:\UMAP\uwot_pure_cpp\uwot_model.cpp" />
+    <ClCompile Include="C:\UMAP\uwot_pure_cpp\uwot_persistence.cpp" />
+    <ClCompile Include="C:\UMAP\uwot_pure_cpp\uwot_fit.cpp" />
+    <ClCompile Include="C:\UMAP\uwot_pure_cpp\uwot_transform.cpp" />
+    <ClCompile Include="C:\UMAP\uwot_pure_cpp\uwot_quantization.cpp" />
+    <ClCompile Include="C:\UMAP\uwot_pure_cpp\uwot_distance.cpp" />
     <ClCompile Include="C:\UMAP\uwot_pure_cpp\lz4.c" />
   </ItemGroup>
   <ItemGroup>

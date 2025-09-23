@@ -10,6 +10,24 @@
     <ClCompile Include="C:\UMAP\uwot_pure_cpp\uwot_hnsw_utils.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="C:\UMAP\uwot_pure_cpp\uwot_model.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\UMAP\uwot_pure_cpp\uwot_persistence.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\UMAP\uwot_pure_cpp\uwot_fit.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\UMAP\uwot_pure_cpp\uwot_transform.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\UMAP\uwot_pure_cpp\uwot_quantization.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\UMAP\uwot_pure_cpp\uwot_distance.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="C:\UMAP\uwot_pure_cpp\lz4.c">
       <Filter>Source Files</Filter>
     </ClCompile>
