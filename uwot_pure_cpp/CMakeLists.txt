@@ -20,6 +20,12 @@ set(UWOT_WRAPPER_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/uwot_simple_wrapper.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/uwot_progress_utils.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/uwot_hnsw_utils.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/uwot_model.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/uwot_persistence.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/uwot_fit.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/uwot_transform.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/uwot_quantization.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/uwot_distance.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/lz4.c
 )
 
@@ -107,7 +113,21 @@ if(BUILD_TESTS)
         target_link_libraries(test_error_fixes_simple OpenMP::OpenMP_CXX)
     endif()
 
-    message(STATUS "Tests enabled - test_error_fixes_simple will be built")
+    # Comprehensive pipeline test
+    add_executable(test_comprehensive_pipeline test_comprehensive_pipeline.cpp)
+    target_link_libraries(test_comprehensive_pipeline uwot_wrapper)
+    if(OpenMP_CXX_FOUND)
+        target_link_libraries(test_comprehensive_pipeline OpenMP::OpenMP_CXX)
+    endif()
+
+    # STANDARD comprehensive test with strict pass/fail thresholds
+    add_executable(test_standard_comprehensive test_standard_comprehensive.cpp)
+    target_link_libraries(test_standard_comprehensive uwot_wrapper)
+    if(OpenMP_CXX_FOUND)
+        target_link_libraries(test_standard_comprehensive OpenMP::OpenMP_CXX)
+    endif()
+
+    message(STATUS "Tests enabled - test_error_fixes_simple, test_comprehensive_pipeline, and test_standard_comprehensive will be built")
 endif()
 
 # Package configuration

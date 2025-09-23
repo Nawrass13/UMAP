@@ -12,7 +12,7 @@
     <!-- Enhanced NuGet metadata -->
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <PackageId>UMAPuwotSharp</PackageId>
-    <Version>3.10.0</Version>
+    <Version>3.11.0</Version>
     <Authors>Amin Gholiha</Authors>
     <Company>ID Soft AB</Company>
     <Product>UMAPuwotSharp Enhanced with HNSW</Product>
@@ -25,7 +25,53 @@
     <PackageProjectUrl>https://github.com/78Spinoza/UMAP</PackageProjectUrl>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageReleaseNotes>
-🛠️ CRITICAL PRECISION FIXES - UMAP v3.10.0: 7 Major Error Corrections + Enhanced Stability
+🏗️ MODULAR ARCHITECTURE BREAKTHROUGH - UMAP v3.11.0: Complete Codebase Refactoring + Comprehensive Testing
+
+🚀 REVOLUTIONARY ARCHITECTURE TRANSFORMATION:
+- Complete modular refactoring: 2,865 lines → 160 lines core engine (94.4% reduction)
+- Clean separation of concerns: 8 specialized modules for maintainability
+- Comprehensive test suite: test_standard_comprehensive.cpp with strict pass/fail thresholds
+- Enhanced reliability: Modular testing prevents regressions and catches critical bugs
+
+🏆 NEW COMPREHENSIVE VALIDATION FRAMEWORK:
+- Loss function convergence validation: Ensures proper UMAP optimization
+- Save/load projection identity testing: Guarantees perfect model persistence
+- Coordinate collapse detection: Prevents normalization bugs (caught normalization regression!)
+- 1% error rate validation: Maintains HNSW approximation quality (&lt;0.5% threshold)
+- MSE consistency checks: Validates fit vs transform accuracy
+
+🔧 MODULAR ARCHITECTURE BENEFITS:
+- uwot_fit.cpp/.h: Training algorithms (isolated and testable)
+- uwot_transform.cpp/.h: Projection operations (regression-proof)
+- uwot_hnsw_utils.cpp/.h: HNSW optimization (performance module)
+- uwot_persistence.cpp/.h: Save/load operations (reliability module)
+- uwot_progress_utils.cpp/.h: Progress reporting (user experience)
+- uwot_distance.cpp/.h: Distance metrics (extensible design)
+
+🧪 CRITICAL BUG DETECTION CAPABILITIES:
+- Caught and fixed normalization collapse bug that standard tests missed
+- Validates loss function decreases properly (prevents optimization failures)
+- Ensures save/load produces identical projections (0.000000 MSE requirement)
+- Detects coordinate variety collapse (prevents all points mapping to same location)
+- Comprehensive 5-metric validation across 2D and 20D embeddings
+
+⚡ ENHANCED DEVELOPMENT EXPERIENCE:
+- Individual modules can be updated independently
+- Comprehensive test coverage with realistic performance expectations
+- Clear pass/fail criteria for production readiness validation
+- Future-proof extensibility for new distance metrics and features
+- Professional codebase with clean separation of responsibilities
+
+💪 PRODUCTION RELIABILITY IMPROVEMENTS:
+- Modular testing prevents "false positive" tests that miss real bugs
+- Strict validation thresholds ensure actual result correctness
+- Architecture supports safe incremental improvements
+- Enhanced maintainability for long-term enterprise deployment
+- Comprehensive regression detection across all critical functionality
+
+✅ UPGRADE HIGHLY RECOMMENDED: Revolutionary architecture with enhanced reliability and testing!
+
+🛠️ CONTINUES v3.10.0 FEATURES: CRITICAL PRECISION FIXES - 7 Major Error Corrections + Enhanced Stability
 
 🚨 PRECISION &amp; STABILITY BREAKTHROUGH:
 - Fixed cosine distance unit normalization: Proper HNSW InnerProductSpace handling
@@ -225,12 +271,12 @@
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
-    <DebugType>full</DebugType>
+    <DebugType>portable</DebugType>
     <DebugSymbols>true</DebugSymbols>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
-    <DebugType>pdbonly</DebugType>
+    <DebugType>portable</DebugType>
     <Optimize>true</Optimize>
   </PropertyGroup>
 

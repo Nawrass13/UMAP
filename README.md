@@ -27,6 +27,55 @@ This project was created specifically because existing NuGet packages and open-s
 
 This implementation addresses these fundamental gaps by providing complete model persistence, authentic transform functionality, arbitrary embedding dimensions (1D-50D), multiple distance metrics, progress reporting, **revolutionary HNSW optimization for 50-2000x faster training and transforms**, and **comprehensive safety features with 5-level outlier detection** - making it production-ready for AI/ML validation and real-time data quality assessment based on the proven uwot algorithm.
 
+## 🏗️ Modular Architecture (v3.11.0+)
+
+### Clean Separation of Concerns
+The codebase has been completely refactored into a **modular architecture** for maintainability, testability, and extensibility:
+
+```
+uwot_pure_cpp/
+├── Core Engine (160 lines - 94.4% size reduction from original 2,865 lines)
+│   ├── uwot_simple_wrapper.cpp/.h    # Main API interface
+│   └── uwot_model.cpp/.h              # Model data structures
+├── Specialized Modules
+│   ├── uwot_fit.cpp/.h                # Training algorithms
+│   ├── uwot_transform.cpp/.h          # Projection operations
+│   ├── uwot_hnsw_utils.cpp/.h         # HNSW optimization
+│   ├── uwot_persistence.cpp/.h        # Save/load operations
+│   ├── uwot_progress_utils.cpp/.h     # Progress reporting
+│   ├── uwot_quantization.cpp/.h       # Data quantization
+│   └── uwot_distance.cpp/.h           # Distance metrics
+└── Testing & Validation
+    ├── test_standard_comprehensive.cpp # Complete validation suite
+    ├── test_comprehensive_pipeline.cpp # Advanced testing
+    └── test_error_fixes_simple.cpp     # Regression tests
+```
+
+### Key Architecture Benefits
+- **🔧 Maintainability**: Individual modules can be updated independently
+- **🧪 Testability**: Comprehensive test suite with strict pass/fail thresholds
+- **🚀 Performance**: Optimized pipelines with HNSW acceleration
+- **🛡️ Reliability**: Modular testing prevents regressions
+- **📈 Extensibility**: Easy to add new distance metrics and features
+
+### 🧪 Comprehensive Testing Framework
+
+The new modular architecture includes a **revolutionary testing framework** that catches critical bugs other tests miss:
+
+```cpp
+// Comprehensive validation with strict pass/fail thresholds
+test_standard_comprehensive.cpp:
+├── Loss function convergence validation (ensures proper optimization)
+├── Save/load projection identity testing (0.000000 MSE requirement)
+├── Coordinate collapse detection (prevents normalization bugs)
+├── 1% error rate validation (<0.5% threshold for HNSW approximation)
+├── MSE consistency checks (fit vs transform accuracy)
+└── Multi-dimensional validation (2D, 20D embeddings)
+```
+
+**Critical Bug Detection Success Story:**
+Our comprehensive test suite **caught and fixed a normalization collapse bug** that standard tests completely missed. The bug caused all transform coordinates to collapse to identical values, but passed basic "function doesn't crash" tests. This demonstrates the power of **result correctness validation** vs. simple functional testing.
+
 ## Overview
 
 A complete, production-ready UMAP (Uniform Manifold Approximation and Projection) implementation based on the high-performance [uwot R package](https://github.com/jlmelville/uwot), providing both standalone C++ libraries and cross-platform C# integration with **enhanced features not available in other C# UMAP libraries**.

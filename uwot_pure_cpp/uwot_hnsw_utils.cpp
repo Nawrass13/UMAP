@@ -319,8 +319,7 @@ namespace hnsw_utils {
 
         // Memory estimation for HNSW index
         size_t estimated_memory_mb = ((size_t)n_obs * hnsw_M * 4 * 2) / (1024 * 1024);
-        printf("[HNSW] Creating index: %d points, estimated %zuMB memory, M=%d, ef_c=%d\n",
-            n_obs, estimated_memory_mb, hnsw_M, hnsw_ef_construction);
+        // Removed debug output for production build
 
         auto index = std::make_unique<hnswlib::HierarchicalNSW<float>>(
             space, n_obs, hnsw_M, hnsw_ef_construction);
@@ -339,7 +338,7 @@ namespace hnsw_utils {
                 static_cast<hnswlib::labeltype>(i));
         }
 
-        printf("[HNSW] Built index with %d points in %dD space\n", n_obs, n_dim);
+        // Removed debug output for production build
     }
 
     // Temporary normalization utilities (will be moved to separate module later)
@@ -355,44 +354,51 @@ namespace hnsw_utils {
         bool normalize_data_consistent(std::vector<float>& input_data, std::vector<float>& output_data,
             int n_obs, int n_dim, std::vector<float>& means, std::vector<float>& stds, int mode) {
 
-            // Copy input to output
-            output_data = input_data;
-
-            // Basic implementation - will be enhanced in dedicated module
-            means.assign(n_dim, 0.0f);
-            stds.assign(n_dim, 1.0f);
+            // Resize output to match input
+            output_data.resize(input_data.size());
 
             if (mode == 1) {
-                // Basic z-score normalization
-                // Compute means
-                for (int i = 0; i < n_obs; i++) {
+                // Check if this is training mode (large n_obs) or transform mode (n_obs = 1)
+                if (n_obs > 1) {
+                    // TRAINING MODE: Compute new means and stds from the data
+                    means.assign(n_dim, 0.0f);
+                    stds.assign(n_dim, 1.0f);
+
+                    // Compute means
+                    for (int i = 0; i < n_obs; i++) {
+                        for (int j = 0; j < n_dim; j++) {
+                            means[j] += input_data[static_cast<size_t>(i) * n_dim + j];
+                        }
+                    }
                     for (int j = 0; j < n_dim; j++) {
-                        means[j] += input_data[static_cast<size_t>(i) * n_dim + j];
+                        means[j] /= n_obs;
+                    }
+
+                    // Compute stds
+                    for (int i = 0; i < n_obs; i++) {
+                        for (int j = 0; j < n_dim; j++) {
+                            float diff = input_data[static_cast<size_t>(i) * n_dim + j] - means[j];
+                            stds[j] += diff * diff;
+                        }
+                    }
+                    for (int j = 0; j < n_dim; j++) {
+                        stds[j] = std::sqrt(stds[j] / (n_obs - 1));
+                        if (stds[j] < 1e-8f) stds[j] = 1.0f; // Avoid division by zero
                     }
                 }
-                for (int j = 0; j < n_dim; j++) {
-                    means[j] /= n_obs;
-                }
+                // TRANSFORM MODE: Use existing means and stds (don't overwrite them!)
 
-                // Compute stds
-                for (int i = 0; i < n_obs; i++) {
-                    for (int j = 0; j < n_dim; j++) {
-                        float diff = input_data[static_cast<size_t>(i) * n_dim + j] - means[j];
-                        stds[j] += diff * diff;
-                    }
-                }
-                for (int j = 0; j < n_dim; j++) {
-                    stds[j] = std::sqrt(stds[j] / (n_obs - 1));
-                    if (stds[j] < 1e-8f) stds[j] = 1.0f; // Avoid division by zero
-                }
-
-                // Apply normalization to output
+                // Apply normalization to output using current means/stds
                 for (int i = 0; i < n_obs; i++) {
                     for (int j = 0; j < n_dim; j++) {
                         size_t idx = static_cast<size_t>(i) * n_dim + j;
                         output_data[idx] = (input_data[idx] - means[j]) / stds[j];
                     }
                 }
+            }
+            else {
+                // Mode 0 or other: just copy data
+                output_data = input_data;
             }
 
             return true;
