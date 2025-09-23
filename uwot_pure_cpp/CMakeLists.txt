@@ -104,9 +104,23 @@ install(FILES ${UWOT_CORE_HEADERS}
     DESTINATION include/uwot
 )
 
-# Tests - Essential validation test only
+# Tests - Essential validation tests
 if(BUILD_TESTS)
-    message(STATUS "Building essential validation test - test_standard_comprehensive")
+    message(STATUS "Tests enabled - building essential validation tests")
+
+    # Simple error fixes test
+    add_executable(test_error_fixes_simple test_error_fixes_simple.cpp)
+    target_link_libraries(test_error_fixes_simple uwot_wrapper)
+    if(OpenMP_CXX_FOUND)
+        target_link_libraries(test_error_fixes_simple OpenMP::OpenMP_CXX)
+    endif()
+
+    # Comprehensive pipeline test
+    add_executable(test_comprehensive_pipeline test_comprehensive_pipeline.cpp)
+    target_link_libraries(test_comprehensive_pipeline uwot_wrapper)
+    if(OpenMP_CXX_FOUND)
+        target_link_libraries(test_comprehensive_pipeline OpenMP::OpenMP_CXX)
+    endif()
 
     # STANDARD comprehensive test with strict pass/fail thresholds
     add_executable(test_standard_comprehensive test_standard_comprehensive.cpp)

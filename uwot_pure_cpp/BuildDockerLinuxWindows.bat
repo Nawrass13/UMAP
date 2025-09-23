@@ -35,19 +35,57 @@ if !ERRORLEVEL! NEQ 0 (
     exit /b 1
 )
 
-echo [INFO] Running Windows tests...
-if exist "Release\test_enhanced_wrapper.exe" (
-    cd Release
-    test_enhanced_wrapper.exe
-    set WIN_TEST_RESULT=!ERRORLEVEL!
-    cd ..
-    if !WIN_TEST_RESULT! EQU 0 (
-        echo [PASS] Windows enhanced tests completed successfully
+echo [INFO] Running Windows validation tests...
+cd Release
+
+REM Run all essential tests
+set WIN_ALL_TESTS_PASSED=1
+
+if exist "test_standard_comprehensive.exe" (
+    echo [TEST] Running standard comprehensive validation...
+    test_standard_comprehensive.exe
+    if !ERRORLEVEL! EQU 0 (
+        echo [PASS] Standard comprehensive test PASSED
     ) else (
-        echo [WARN] Windows enhanced tests failed with code !WIN_TEST_RESULT!
+        echo [FAIL] Standard comprehensive test FAILED with code !ERRORLEVEL!
+        set WIN_ALL_TESTS_PASSED=0
     )
 ) else (
-    echo [WARN] Windows test executable not found
+    echo [WARN] test_standard_comprehensive.exe not found
+    set WIN_ALL_TESTS_PASSED=0
+)
+
+if exist "test_error_fixes_simple.exe" (
+    echo [TEST] Running error fixes validation...
+    test_error_fixes_simple.exe
+    if !ERRORLEVEL! EQU 0 (
+        echo [PASS] Error fixes test PASSED
+    ) else (
+        echo [FAIL] Error fixes test FAILED with code !ERRORLEVEL!
+        set WIN_ALL_TESTS_PASSED=0
+    )
+) else (
+    echo [WARN] test_error_fixes_simple.exe not found
+)
+
+if exist "test_comprehensive_pipeline.exe" (
+    echo [TEST] Running comprehensive pipeline validation...
+    test_comprehensive_pipeline.exe
+    if !ERRORLEVEL! EQU 0 (
+        echo [PASS] Comprehensive pipeline test PASSED
+    ) else (
+        echo [FAIL] Comprehensive pipeline test FAILED with code !ERRORLEVEL!
+        set WIN_ALL_TESTS_PASSED=0
+    )
+) else (
+    echo [WARN] test_comprehensive_pipeline.exe not found
+)
+
+cd ..
+if !WIN_ALL_TESTS_PASSED! EQU 1 (
+    echo [PASS] ALL Windows tests completed successfully
+) else (
+    echo [FAIL] Some Windows tests failed - build may have issues!
 )
 
 echo [PASS] Windows build completed
@@ -63,7 +101,7 @@ if exist build-linux (
 )
 
 REM Run Docker build with explicit library copying
-docker run --rm -v "%cd%":/src -w /src ubuntu:22.04 bash -c "apt-get update && apt-get install -y build-essential cmake libstdc++-11-dev && mkdir -p build-linux && cd build-linux && cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON -DBUILD_TESTS=ON -DCMAKE_POSITION_INDEPENDENT_CODE=ON && make -j4 && ls -la . && echo 'Ensuring library is properly copied...' && if [ -f 'libuwot.so' ]; then cp libuwot.so libuwot_backup.so; fi && for f in libuwot.so.*; do if [ -f $f ] && [ ! -L $f ]; then cp $f libuwot_final.so && echo Copied $f to libuwot_final.so; fi; done && if [ -f './comprehensive_test' ]; then echo 'Running comprehensive tests...' && ./comprehensive_test && echo '[PASS] Linux comprehensive test completed successfully'; else echo '[WARN] Linux test executable not found'; fi"
+docker run --rm -v "%cd%":/src -w /src ubuntu:22.04 bash -c "apt-get update && apt-get install -y build-essential cmake libstdc++-11-dev && mkdir -p build-linux && cd build-linux && cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON -DBUILD_TESTS=ON -DCMAKE_POSITION_INDEPENDENT_CODE=ON && make -j4 && ls -la . && echo 'Ensuring library is properly copied...' && if [ -f 'libuwot.so' ]; then cp libuwot.so libuwot_backup.so; fi && for f in libuwot.so.*; do if [ -f \$f ] && [ ! -L \$f ]; then cp \$f libuwot_final.so && echo Copied \$f to libuwot_final.so; fi; done && echo '[INFO] Running Linux validation tests...' && LINUX_ALL_TESTS_PASSED=1 && if [ -f './test_standard_comprehensive' ]; then echo '[TEST] Running standard comprehensive validation...' && ./test_standard_comprehensive && echo '[PASS] Standard comprehensive test PASSED' || (echo '[FAIL] Standard comprehensive test FAILED' && LINUX_ALL_TESTS_PASSED=0); else echo '[WARN] test_standard_comprehensive not found' && LINUX_ALL_TESTS_PASSED=0; fi && if [ -f './test_error_fixes_simple' ]; then echo '[TEST] Running error fixes validation...' && ./test_error_fixes_simple && echo '[PASS] Error fixes test PASSED' || echo '[FAIL] Error fixes test FAILED'; else echo '[WARN] test_error_fixes_simple not found'; fi && if [ -f './test_comprehensive_pipeline' ]; then echo '[TEST] Running comprehensive pipeline validation...' && ./test_comprehensive_pipeline && echo '[PASS] Comprehensive pipeline test PASSED' || echo '[FAIL] Comprehensive pipeline test FAILED'; else echo '[WARN] test_comprehensive_pipeline not found'; fi && if [ \$LINUX_ALL_TESTS_PASSED -eq 1 ]; then echo '[PASS] ALL Linux tests completed successfully'; else echo '[FAIL] Some Linux tests failed - build may have issues!'; fi"
 
 if !ERRORLEVEL! NEQ 0 (
     echo ERROR: Docker Linux build failed!
@@ -180,10 +218,22 @@ if exist "build-windows\Release\uwot.dll" (
     for %%A in ("build-windows\Release\uwot.dll") do echo         Size: %%~zA bytes
 ) else (echo   [FAIL] uwot.dll)
 
-if exist "build-windows\Release\test_enhanced_wrapper.exe" (
-    echo   [PASS] test_enhanced_wrapper.exe
+if exist "build-windows\Release\test_standard_comprehensive.exe" (
+    echo   [PASS] test_standard_comprehensive.exe
 ) else (
-    echo   [FAIL] test_enhanced_wrapper.exe
+    echo   [FAIL] test_standard_comprehensive.exe
+)
+
+if exist "build-windows\Release\test_error_fixes_simple.exe" (
+    echo   [PASS] test_error_fixes_simple.exe
+) else (
+    echo   [FAIL] test_error_fixes_simple.exe
+)
+
+if exist "build-windows\Release\test_comprehensive_pipeline.exe" (
+    echo   [PASS] test_comprehensive_pipeline.exe
+) else (
+    echo   [FAIL] test_comprehensive_pipeline.exe
 )
 
 echo.
@@ -203,10 +253,22 @@ if exist "build-linux" (
     echo   [FAIL] build-linux directory not found
 )
 
-if exist "build-linux\test_enhanced_wrapper" (
-    echo   [PASS] test_enhanced_wrapper
+if exist "build-linux\test_standard_comprehensive" (
+    echo   [PASS] test_standard_comprehensive
 ) else (
-    echo   [FAIL] test_enhanced_wrapper
+    echo   [FAIL] test_standard_comprehensive
+)
+
+if exist "build-linux\test_error_fixes_simple" (
+    echo   [PASS] test_error_fixes_simple
+) else (
+    echo   [FAIL] test_error_fixes_simple
+)
+
+if exist "build-linux\test_comprehensive_pipeline" (
+    echo   [PASS] test_comprehensive_pipeline
+) else (
+    echo   [FAIL] test_comprehensive_pipeline
 )
 
 echo.
