@@ -104,30 +104,10 @@ install(FILES ${UWOT_CORE_HEADERS}
     DESTINATION include/uwot
 )
 
-# Tests
+# Tests (disabled - all test files removed for production build)
 if(BUILD_TESTS)
-    # Simple error fixes test
-    add_executable(test_error_fixes_simple test_error_fixes_simple.cpp)
-    target_link_libraries(test_error_fixes_simple uwot_wrapper)
-    if(OpenMP_CXX_FOUND)
-        target_link_libraries(test_error_fixes_simple OpenMP::OpenMP_CXX)
-    endif()
-
-    # Comprehensive pipeline test
-    add_executable(test_comprehensive_pipeline test_comprehensive_pipeline.cpp)
-    target_link_libraries(test_comprehensive_pipeline uwot_wrapper)
-    if(OpenMP_CXX_FOUND)
-        target_link_libraries(test_comprehensive_pipeline OpenMP::OpenMP_CXX)
-    endif()
-
-    # STANDARD comprehensive test with strict pass/fail thresholds
-    add_executable(test_standard_comprehensive test_standard_comprehensive.cpp)
-    target_link_libraries(test_standard_comprehensive uwot_wrapper)
-    if(OpenMP_CXX_FOUND)
-        target_link_libraries(test_standard_comprehensive OpenMP::OpenMP_CXX)
-    endif()
-
-    message(STATUS "Tests enabled - test_error_fixes_simple, test_comprehensive_pipeline, and test_standard_comprehensive will be built")
+    message(STATUS "Tests disabled - test files removed for production build")
+    # All test files have been removed for clean production builds
 endif()
 
 # Package configuration
