@@ -671,8 +671,8 @@ namespace fit_utils {
 
                         // Accumulate attractive force loss (UMAP cross-entropy: attractive term)
                         if (loss_samples < 1000) { // Sample subset for performance
-                            float attractive_term = 1.0f / (1.0f + model->a * pd2b);
-                            epoch_loss += -std::log(attractive_term + 1e-8f);  // Negative log-probability for attraction
+                            float attractive_prob = 1.0f / (1.0f + model->a * pd2b);
+                            epoch_loss += -std::log(attractive_prob + 1e-8f);  // -log(P_attract)
                             loss_samples++;
                         }
                     }
@@ -707,8 +707,8 @@ namespace fit_utils {
 
                             // Accumulate repulsive force loss (UMAP cross-entropy: repulsive term)
                             if (loss_samples < 1000) { // Sample subset for performance
-                                float repulsive_term = model->a * std::pow(neg_dist_sq, model->b);
-                                epoch_loss += std::log(1.0f + repulsive_term + 1e-8f);  // Log(1 + repulsive) for repulsion
+                                float repulsive_prob = 1.0f / (1.0f + model->a * std::pow(neg_dist_sq, model->b));
+                                epoch_loss += -std::log(1.0f - repulsive_prob + 1e-8f);  // -log(1 - P_repulse)
                                 loss_samples++;
                             }
                         }
