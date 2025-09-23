@@ -104,10 +104,16 @@ install(FILES ${UWOT_CORE_HEADERS}
     DESTINATION include/uwot
 )
 
-# Tests (disabled - all test files removed for production build)
+# Tests - Essential validation test only
 if(BUILD_TESTS)
-    message(STATUS "Tests disabled - test files removed for production build")
-    # All test files have been removed for clean production builds
+    message(STATUS "Building essential validation test - test_standard_comprehensive")
+
+    # STANDARD comprehensive test with strict pass/fail thresholds
+    add_executable(test_standard_comprehensive test_standard_comprehensive.cpp)
+    target_link_libraries(test_standard_comprehensive uwot_wrapper)
+    if(OpenMP_CXX_FOUND)
+        target_link_libraries(test_standard_comprehensive OpenMP::OpenMP_CXX)
+    endif()
 endif()
 
 # Package configuration
