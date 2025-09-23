@@ -116,7 +116,14 @@ void loss_tracking_callback(const char* phase, int current, int total, float per
     // Parse loss from message if it contains "Loss: X.XXX"
     if (message && strstr(message, "Loss:")) {
         float parsed_loss;
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable: 4996)
+#endif
         if (sscanf(message, "%*[^L]Loss: %f", &parsed_loss) == 1) {
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
             last_loss = parsed_loss;
             g_loss_history.push_back(parsed_loss);
         }

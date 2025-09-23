@@ -82,15 +82,17 @@ if exist "test_comprehensive_pipeline.exe" (
 )
 
 if exist "test_enhanced_wrapper.exe" (
-    echo [TEST] Running legacy enhanced wrapper test...
+    echo [TEST] Running enhanced wrapper validation...
     test_enhanced_wrapper.exe
     if !ERRORLEVEL! EQU 0 (
         echo [PASS] Enhanced wrapper test PASSED
     ) else (
-        echo [WARN] Enhanced wrapper test FAILED with code !ERRORLEVEL! (legacy test may be outdated)
+        echo [FAIL] Enhanced wrapper test FAILED with code !ERRORLEVEL!
+        set WIN_ALL_TESTS_PASSED=0
     )
 ) else (
     echo [WARN] test_enhanced_wrapper.exe not found
+    set WIN_ALL_TESTS_PASSED=0
 )
 
 cd ..
@@ -113,7 +115,7 @@ if exist build-linux (
 )
 
 REM Run Docker build with explicit library copying
-docker run --rm -v "%cd%":/src -w /src ubuntu:22.04 bash -c "apt-get update && apt-get install -y build-essential cmake libstdc++-11-dev && mkdir -p build-linux && cd build-linux && cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON -DBUILD_TESTS=ON -DCMAKE_POSITION_INDEPENDENT_CODE=ON && make -j4 && ls -la . && echo 'Ensuring library is properly copied...' && if [ -f 'libuwot.so' ]; then cp libuwot.so libuwot_backup.so; fi && for f in libuwot.so.*; do if [ -f \$f ] && [ ! -L \$f ]; then cp \$f libuwot_final.so && echo Copied \$f to libuwot_final.so; fi; done && echo '[INFO] Running Linux validation tests...' && LINUX_ALL_TESTS_PASSED=1 && if [ -f './test_standard_comprehensive' ]; then echo '[TEST] Running standard comprehensive validation...' && ./test_standard_comprehensive && echo '[PASS] Standard comprehensive test PASSED' || (echo '[FAIL] Standard comprehensive test FAILED' && LINUX_ALL_TESTS_PASSED=0); else echo '[WARN] test_standard_comprehensive not found' && LINUX_ALL_TESTS_PASSED=0; fi && if [ -f './test_error_fixes_simple' ]; then echo '[TEST] Running error fixes validation...' && ./test_error_fixes_simple && echo '[PASS] Error fixes test PASSED' || echo '[FAIL] Error fixes test FAILED'; else echo '[WARN] test_error_fixes_simple not found'; fi && if [ -f './test_comprehensive_pipeline' ]; then echo '[TEST] Running comprehensive pipeline validation...' && ./test_comprehensive_pipeline && echo '[PASS] Comprehensive pipeline test PASSED' || echo '[FAIL] Comprehensive pipeline test FAILED'; else echo '[WARN] test_comprehensive_pipeline not found'; fi && if [ \$LINUX_ALL_TESTS_PASSED -eq 1 ]; then echo '[PASS] ALL Linux tests completed successfully'; else echo '[FAIL] Some Linux tests failed - build may have issues!'; fi"
+docker run --rm -v "%cd%":/src -w /src ubuntu:22.04 bash -c "apt-get update && apt-get install -y build-essential cmake libstdc++-11-dev && mkdir -p build-linux && cd build-linux && cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON -DBUILD_TESTS=ON -DCMAKE_POSITION_INDEPENDENT_CODE=ON && make -j4 && ls -la . && echo 'Ensuring library is properly copied...' && if [ -f 'libuwot.so' ]; then cp libuwot.so libuwot_backup.so; fi && for f in libuwot.so.*; do if [ -f \$f ] && [ ! -L \$f ]; then cp \$f libuwot_final.so && echo Copied \$f to libuwot_final.so; fi; done && echo '[INFO] Running Linux validation tests...' && LINUX_ALL_TESTS_PASSED=1 && echo '[TEST] Test 1: Standard comprehensive validation...' && if [ -f './test_standard_comprehensive' ]; then ./test_standard_comprehensive && echo '[PASS] Test 1 PASSED' || (echo '[FAIL] Test 1 FAILED' && LINUX_ALL_TESTS_PASSED=0); else echo '[WARN] test_standard_comprehensive not found' && LINUX_ALL_TESTS_PASSED=0; fi && echo '[TEST] Test 2: Error fixes validation...' && if [ -f './test_error_fixes_simple' ]; then ./test_error_fixes_simple && echo '[PASS] Test 2 PASSED' || (echo '[FAIL] Test 2 FAILED' && LINUX_ALL_TESTS_PASSED=0); else echo '[WARN] test_error_fixes_simple not found' && LINUX_ALL_TESTS_PASSED=0; fi && echo '[TEST] Test 3: Comprehensive pipeline validation...' && if [ -f './test_comprehensive_pipeline' ]; then ./test_comprehensive_pipeline && echo '[PASS] Test 3 PASSED' || (echo '[FAIL] Test 3 FAILED' && LINUX_ALL_TESTS_PASSED=0); else echo '[WARN] test_comprehensive_pipeline not found' && LINUX_ALL_TESTS_PASSED=0; fi && echo '[TEST] Test 4: Enhanced wrapper validation...' && if [ -f './test_enhanced_wrapper' ]; then ./test_enhanced_wrapper && echo '[PASS] Test 4 PASSED' || (echo '[FAIL] Test 4 FAILED' && LINUX_ALL_TESTS_PASSED=0); else echo '[WARN] test_enhanced_wrapper not found' && LINUX_ALL_TESTS_PASSED=0; fi && if [ \$LINUX_ALL_TESTS_PASSED -eq 1 ]; then echo '[PASS] ALL 4 Linux tests completed successfully'; else echo '[FAIL] Some Linux tests failed - build may have issues!'; fi"
 
 if !ERRORLEVEL! NEQ 0 (
     echo ERROR: Docker Linux build failed!

@@ -47,37 +47,90 @@ echo.
 
 REM Test the builds
 echo ===========================================
-echo   Running Enhanced Tests
+echo   Running All Enhanced Tests (1-4)
 echo ===========================================
 echo.
 
-echo Running enhanced functionality test...
-echo ----------------------------------------
+set ALL_TESTS_PASSED=1
 
-REM Change to Release directory and run test
-if exist "Release\test_enhanced_wrapper.exe" (
-    echo Starting test execution...
-    cd Release
-    test_enhanced_wrapper.exe
-    set TEST_RESULT=%ERRORLEVEL%
-    cd ..
-    
-    if %TEST_RESULT% EQU 0 (
-        echo.
-        echo [PASS] Enhanced test completed successfully!
-        echo       - 27D embedding capability verified
-        echo       - Multiple distance metrics tested
-        echo       - Save/load functionality confirmed
-        echo       - Transform (out-of-sample) working
+REM Change to Release directory for all tests
+cd Release
+
+echo [TEST 1] Running standard comprehensive validation...
+if exist "test_standard_comprehensive.exe" (
+    test_standard_comprehensive.exe
+    if %ERRORLEVEL% EQU 0 (
+        echo [PASS] Test 1: Standard comprehensive test PASSED
     ) else (
-        echo.
-        echo [WARN] Enhanced test failed with error code %TEST_RESULT%
-        echo       Test executable ran but returned an error
+        echo [FAIL] Test 1: Standard comprehensive test FAILED with code %ERRORLEVEL%
+        set ALL_TESTS_PASSED=0
+    )
+) else (
+    echo [WARN] test_standard_comprehensive.exe not found
+    set ALL_TESTS_PASSED=0
+)
+
+echo.
+echo [TEST 2] Running error fixes validation...
+if exist "test_error_fixes_simple.exe" (
+    test_error_fixes_simple.exe
+    if %ERRORLEVEL% EQU 0 (
+        echo [PASS] Test 2: Error fixes test PASSED
+    ) else (
+        echo [FAIL] Test 2: Error fixes test FAILED with code %ERRORLEVEL%
+        set ALL_TESTS_PASSED=0
+    )
+) else (
+    echo [WARN] test_error_fixes_simple.exe not found
+    set ALL_TESTS_PASSED=0
+)
+
+echo.
+echo [TEST 3] Running comprehensive pipeline validation...
+if exist "test_comprehensive_pipeline.exe" (
+    test_comprehensive_pipeline.exe
+    if %ERRORLEVEL% EQU 0 (
+        echo [PASS] Test 3: Comprehensive pipeline test PASSED
+    ) else (
+        echo [FAIL] Test 3: Comprehensive pipeline test FAILED with code %ERRORLEVEL%
+        set ALL_TESTS_PASSED=0
+    )
+) else (
+    echo [WARN] test_comprehensive_pipeline.exe not found
+    set ALL_TESTS_PASSED=0
+)
+
+echo.
+echo [TEST 4] Running enhanced wrapper validation...
+if exist "test_enhanced_wrapper.exe" (
+    test_enhanced_wrapper.exe
+    if %ERRORLEVEL% EQU 0 (
+        echo [PASS] Test 4: Enhanced wrapper test PASSED
+    ) else (
+        echo [FAIL] Test 4: Enhanced wrapper test FAILED with code %ERRORLEVEL%
+        set ALL_TESTS_PASSED=0
     )
 ) else (
     echo [WARN] test_enhanced_wrapper.exe not found
-    echo       Enhanced tests cannot be run
-    echo       Expected location: Release\test_enhanced_wrapper.exe
+    set ALL_TESTS_PASSED=0
+)
+
+cd ..
+
+echo.
+if %ALL_TESTS_PASSED% EQU 1 (
+    echo [PASS] ALL 4 TESTS COMPLETED SUCCESSFULLY!
+    echo       - Standard comprehensive validation verified
+    echo       - Error fixes validation verified
+    echo       - Comprehensive pipeline validation verified
+    echo       - Enhanced wrapper validation verified
+    echo       - 27D embedding capability confirmed
+    echo       - Multiple distance metrics working
+    echo       - Save/load functionality operational
+    echo       - Transform (out-of-sample) working
+) else (
+    echo [FAIL] SOME TESTS FAILED!
+    echo       Build may have issues - check test output above
 )
 
 cd ..
@@ -144,10 +197,28 @@ if exist "build\Release\uwot.dll" (
     echo [FAIL] uwot.dll missing!
 )
 
-if exist "build\Release\test_enhanced_wrapper.exe" (
-    echo [PASS] test_enhanced_wrapper.exe found (Enhanced tests)
+if exist "build\Release\test_standard_comprehensive.exe" (
+    echo [PASS] test_standard_comprehensive.exe found (Critical validation)
 ) else (
-    echo [WARN] test_enhanced_wrapper.exe missing - tests cannot verify enhanced features
+    echo [WARN] test_standard_comprehensive.exe missing
+)
+
+if exist "build\Release\test_error_fixes_simple.exe" (
+    echo [PASS] test_error_fixes_simple.exe found (Error fixes validation)
+) else (
+    echo [WARN] test_error_fixes_simple.exe missing
+)
+
+if exist "build\Release\test_comprehensive_pipeline.exe" (
+    echo [PASS] test_comprehensive_pipeline.exe found (Pipeline validation)
+) else (
+    echo [WARN] test_comprehensive_pipeline.exe missing
+)
+
+if exist "build\Release\test_enhanced_wrapper.exe" (
+    echo [PASS] test_enhanced_wrapper.exe found (Enhanced features)
+) else (
+    echo [WARN] test_enhanced_wrapper.exe missing
 )
 
 if exist "uwot_simple_wrapper.h" (
