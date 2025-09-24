@@ -1,448 +1,102 @@
+Missing L2 Normalization for Cosine Metric in HNSW (Incorrect Results):
 
-uwot_transform_detailed
+Files: uwot_fit.cpp, uwot_hnsw_utils.cpp.
+In NormalizationPipeline::determine_normalization_mode, Cosine uses mode=0 (copy data), but for HNSW InnerProductSpace to approximate cosine (1 - sim), vectors must be L2-normalized to unit length before adding (add_points_to_hnsw). Without this, HNSW approximates dot product (favors longer vectors), not cosine. Exact KNN (cosine_distance) computes norms properly, leading to inconsistency between approx/exact modes. In compute_neighbor_statistics, distance adjustment (1.0 + dist) assumes unit norms. Synthetic data (normal dist) has varying norms, exacerbating this. Fix: Add mode=2 for Cosine (L2 normalize each vector independently in normalize_data_consistent). Impacts: Wrong embeddings/neighbors for Cosine users.
 
-Nice — let’s walk through **each of the six issues** I flagged and what you can do with them.
 
----
+No Endian Handling in Binary Save/Load (Data Corruption Cross-Platform):
 
-### **1. Distance handling mismatch**
+File: uwot_persistence.cpp.
+save_model/load_model writes/reads floats/ints directly (file.write/read). On big-endian vs. little-endian systems, values corrupt (e.g., floats swapped). No magic number or endian check. Impacts: Model files unusable across architectures (e.g., x86 vs. ARM). Fix: Use portable serialization (e.g., write in little-endian always) or add endian detection.
 
-* **Problem**: You’re post-processing HNSW’s return values incorrectly for cosine/inner product.
-* **Fix**: Use the same transformation UMAP uses internally:
 
-  * For **Euclidean**: keep `sqrt(distance)` (HNSW returns squared L2).
-  * For **Cosine**: if you used `InnerProductSpace`, HNSW gives `1 - cos(x, y)`. So you can just set
+Potential Memory Corruption in Bounds-Checked Copies (If Sizes Mismatch):
 
-    ```cpp
-    distance = std::max(0.0f, distance); // already 0..2 range
-    ```
+File: uwot_fit.cpp (in optimize_layout, element-wise copy to embedding).
+Checks model->embedding.size() < expected, returns error. But if mismatch occurs (e.g., due to earlier alloc fail), partial copy could overrun. Similar in other vec resizes/copies (e.g., reconstructed_data in persistence). Impacts: Rare crashes/OOM. Fix: Use std::copy with iterators and resize first.
 
-    → Drop the `1.0f + distance` shift.
-  * For **Manhattan**: leave as is.
 
----
+Temp File Usage Without Secure Creation (Security Vulnerability):
 
-### **2. Weight computation may collapse**
+Files: uwot_hnsw_utils.cpp, uwot_persistence.cpp.
+generate_unique_temp_filename uses timestamp+random, but no O_EXCL or secure open (e.g., mkstemp). Race conditions possible (attacker predicts/creates file). No permission checks (e.g., 0600). If /tmp full/no-write, fails silently. Impacts: Local exploits (symlink attacks); failures in restricted envs. Fix: Use std::filesystem::temp_directory_path + std::tmpfile or mkstemp.
 
-* **Problem**: The `std::max(weight, 0.01f)` floor makes distant neighbors indistinguishable.
-* **Fix**: Lower the floor dramatically or remove it:
 
-  ```cpp
-  weight = std::max(weight, 1e-6f);
-  ```
+LZ4 Decompression Without Full Validation (Buffer Overrun Risk):
 
-  → Keeps numerical stability but preserves distance sensitivity.
+File: uwot_persistence.cpp (load_hnsw_from_stream_compressed).
+Uses LZ4_decompress_safe, which is bounds-checked, but if compressed_size/original_size corrupted in file, allocates large vectors (up to 500MB cap, but cap arbitrary). No checksum. Impacts: OOM/crash on malformed files. Fix: Add CRC32 checksum; lower caps.
 
----
 
-### **3. Exact match detection too strict**
 
-* **Problem**: Threshold `1e-6 * n_dim^0.3` is too small in high-dim float32 space.
-* **Fix**: Relax it — something proportional to `1e-3 / sqrt(n_dim)` works better:
+High Severity (Logical Errors or Performance Issues)
 
-  ```cpp
-  float match_threshold = 1e-3f / std::sqrt(static_cast<float>(n_dim));
-  ```
+Fragile Loss Parsing in Callbacks (Breaks if Format Changes):
 
-  → For `n_dim=350`, that’s \~5e-5, achievable in normalized vectors.
+File: test_standard_comprehensive.cpp (loss_tracking_callback).
+Parses "Loss: X.XXX" from message via strstr/sscanf. If upstream changes format (e.g., "loss=..."), fails. Impacts: Tests report wrong loss/convergence. Fix: Pass loss directly, not via string.
 
----
 
-### **4. Bandwidth scaling based on `min_dist`**
+Insufficient K-Means Iterations in PQ (Poor Codebooks):
 
-* **Problem**: `min_dist` is an embedding-space hyperparam, not input-space distance.
-* **Fix**: Base bandwidth on neighbor distances only:
+File: uwot_quantization.cpp (simple_kmeans).
+Fixed 25 iterations; for 256 clusters, may not converge (esp. with bad init). Empty clusters keep old centroids (no re-init). Impacts: Suboptimal quantization, higher MSE in tests/reconstructions. Fix: Add convergence check (e.g., epsilon on change); re-init empty clusters.
 
-  ```cpp
-  float base_bandwidth = std::max(1e-3f, model->mean_neighbor_distance * 0.5f);
-  ```
 
-  → Removes unintended coupling between input and embedding parameters.
+HNSW Reconstruction from PQ is Lossy Without Warning (Inconsistent Transforms):
 
----
+File: uwot_persistence.cpp (load_model).
+If no HNSW saved (e.g., after quantization in fit), reconstructs from PQ (lossy), rebuilds HNSW. Neighbors may differ from original. No user warning. Impacts: Non-reproducible transforms post-load. Fix: Log warning via callback; store exact KNN always as fallback.
 
-### **5. Confidence / percentile / z-score metrics**
 
-* **Problem**: Right now, if `p95_neighbor_distance ≈ min_neighbor_distance`, denominator can blow up.
-* **Fix**: Clamp denominators:
+No Parallelism in HNSW Point Addition (Performance Bottleneck):
 
-  ```cpp
-  float denom = std::max(1e-6f, model->p95_neighbor_distance - model->min_neighbor_distance);
-  confidence_score[i] = 1.0f - (min_distance - model->min_neighbor_distance) / denom;
-  confidence_score[i] = std::clamp(confidence_score[i], 0.0f, 1.0f);
-  ```
+File: uwot_hnsw_utils.cpp (add_points_to_hnsw).
+Sequential addPoint for all n_obs. HNSWlib supports parallel adds but not used. Impacts: Slow build for large n_obs (e.g., >1M). Fix: Use OpenMP loop if HNSWlib thread-safe.
 
----
 
-### **6. Embedding memcpy safety**
+Assumes Data Suitable for Metrics (Silent Wrong Results):
 
-* **Problem**: No check that caller allocated `embedding` with `n_new_obs * model->embedding_dim`.
-* **Fix**: Either enforce via explicit parameter:
+File: uwot_distance.cpp.
+Hamming assumes binary floats (diff >1e-6f); if not 0/1, wrong. Correlation assumes meaningful means. No validation. Impacts: Garbage in/out for bad data. Fix: Add metric-specific checks/warnings.
 
-  ```cpp
-  if (n_embedding_dim != model->embedding_dim) return UWOT_ERROR_INVALID_PARAMS;
-  ```
 
-  Or wrap `memcpy` in a loop with index-based writes to avoid silent UB.
 
----
+Medium Severity (Code Smells/Maintainability)
 
-✅ **Summary of fixes**
+Duplicated Code for HNSW Stream Utils (Maintainability):
 
-* (1) Correct metric post-processing.
-* (2) Reduce/remove weight floor.
-* (3) Relax exact-match threshold.
-* (4) Remove `min_dist` from bandwidth scaling.
-* (5) Clamp denominators in metrics.
-* (6) Add output buffer safety checks.
+Files: uwot_hnsw_utils.cpp and uwot_persistence.cpp have similar save/load_compressed funcs. Impacts: Bug fixes in one missed in other. Fix: Consolidate into one module.
 
----
 
+Hardcoded Seeds and Params (Limited Testing):
 
-Nice — thanks for pasting the `uwot_fit_with_progress` implementation. Below I’ll give a compact, actionable plan for handling each of the six issues (1–6) you asked about, plus minimal, copy-pasteable code snippets and exact insertion points in your function so you can patch quickly.
+Files: test_*.cpp, uwot_quantization.cpp.
+Fixed seeds (42); good for repro but may miss edge cases. N_EPOCHS=100/200 reduced for speed, but may not test full convergence. Impacts: Tests miss rare bugs. Fix: Parametrize seeds/epochs.
 
-I assume you want *correctness and stability* rather than surgical micro-optimizations. I’ll keep changes small and local, and I’ll point to the most appropriate spots in your code.
 
----
-uwot_fit_with_progress
-uwot_fit_with_progress_V2
-# Quick summary (one-line per issue)
+Unused/Empty Functions (Dead Code):
 
-1. Fix metric/distance interpretation for cosine/inner-product and ensure normalized vectors are unit-length when using cosine.
-2. Remove aggressive `weight` floor — clamp at a tiny epsilon (e.g. `1e-6`) instead of `0.01`.
-3. Relax exact-match threshold to something robust in float32: `1e-3 / sqrt(n_dim)`.
-4. Stop using `min_dist` (embedding hyperparam) to compute input-space bandwidth; base bandwidth on neighbor distances (mean or percentiles).
-5. Guard confidence/percentile/z-score denominators with `max(eps, denom)` to avoid division by tiny numbers.
-6. Avoid raw `memcpy` blindly: validate expected sizes and copy element-wise into the output buffer (or validate `model->embedding.size()` first).
+File: uwot_persistence.cpp (debug_print_model_state empty).
+Impacts: Clutter. Fix: Remove or implement.
 
----
 
-# Where to apply each change (with snippets)
+Potential Integer Overflow in Size Calcs:
 
-Below I give the snippet and a short explanation where to insert it in your function.
+Multiple files (e.g., vec.resize(n_obs * n_dim)).
+For large n_obs/n_dim, size_t overflow. Impacts: OOM/crash. Fix: Add checks (e.g., if n_obs > SIZE_MAX / n_dim).
 
----
 
-## 1) Metric / distance handling — *where:* before building the HNSW space and when normalizing data for cosine
 
-**Why:** if the metric is cosine you must ensure the normalized vectors are unit-length and treat returned HNSW distance as `1 - cosine_similarity` (no `+1` shift). Also, if `determine_normalization_mode(metric)` returns a mode for cosine, ensure it includes per-vector normalization (L2).
+Low Severity (Minor Optimizations/Style)
 
-**Insert after** you compute `norm_mode` and after `normalized_data` is created (right after normalization), and ensure normalization enforces unit length for cosine:
+Printf Typos in Test Output:
 
-```cpp
-// -- After normalize_data_consistent(...)
-if (metric == UWOT_METRIC_COSINE) {
-    // Ensure each vector is unit-normalized (HNSW InnerProductSpace expects normalized vectors for cosine)
-    for (int i = 0; i < n_obs; ++i) {
-        float norm = 0.0f;
-        for (int j = 0; j < n_dim; ++j) {
-            float v = normalized_data[static_cast<size_t>(i) * n_dim + j];
-            norm += v * v;
-        }
-        norm = std::sqrt(std::max(1e-12f, norm));
-        for (int j = 0; j < n_dim; ++j) {
-            normalized_data[static_cast<size_t>(i) * n_dim + j] /= norm;
-        }
-    }
-}
-```
+File: test_standard_comprehensive.cpp.
+printf "%.1s" for emojis (should be %s). Impacts: Garbled output. Fix: Correct format.
 
-**Notes:** when converting distances elsewhere (e.g., in transform), handle cosine distances returned by HNSW as already in `[0..2]` or `1 - cos` depending on your `space` implementation — but do **not** add `1.0f + distance`.
 
-If you have a place where you convert HNSW distance to actionable `distance` (e.g., in transform), use:
+Unnecessary Globals if Not Multi-Threaded:
 
-```cpp
-case UWOT_METRIC_COSINE:
-    // HNSW returns 1 - cosine_similarity for normalized vectors (range [0,2])
-    distance = std::max(0.0f, distance);
-    break;
-```
-
----
-
-## 2) Weight floor removal — *where:* immediately after `uwot::smooth_knn` produced `nn_weights`, and also when converting `nn_weights` into `model->nn_weights`
-
-**Why:** `weight = max(weight, 0.01f)` makes all neighbors almost equal for distant points.
-
-**Replace / Insert** right after you compute `nn_weights` (before `convert_to_edges` or when mapping to `model->nn_weights`):
-
-```cpp
-// Clamp tiny weights but preserve relative differences
-const double MIN_WEIGHT = 1e-6;
-for (size_t wi = 0; wi < nn_weights.size(); ++wi) {
-    if (nn_weights[wi] < MIN_WEIGHT) nn_weights[wi] = MIN_WEIGHT;
-}
-```
-
-And when copying to model float vector:
-
-```cpp
-for (size_t i = 0; i < nn_distances.size(); i++) {
-    model->nn_distances[i] = static_cast<float>(nn_distances[i]);
-    // ensure no overly-large floor here either
-    model->nn_weights[i] = static_cast<float>(std::max<double>(nn_weights[i], MIN_WEIGHT));
-}
-```
-
-**Notes:** `1e-6` is small, keeps stability but retains distance sensitivity.
-
----
-
-## 3) Exact-match threshold — *where:* inside `compute_neighbor_statistics` (or wherever you compute `match_threshold`) and/or where you later detect exact matches in `uwot_transform_detailed`
-
-**Why:** `1e-6 * n_dim^0.3` is too strict — relax to `1e-3 / sqrt(n_dim)`.
-
-**Patch** (example snippet; place in compute/statistics):
-
-```cpp
-// Use a more lenient but robust exact-match threshold in float32
-float match_threshold = 1e-3f / std::sqrt(static_cast<float>(model->n_dim));
-// store in model so transform can reuse exact same threshold
-model->exact_match_threshold = match_threshold;
-```
-
-Then in transform, use `model->exact_match_threshold` (instead of recomputing something different).
-
----
-
-## 4) Bandwidth scaling — *where:* in `compute_neighbor_statistics` / `smooth_knn` parameter selection / the place you compute `base_bandwidth` for weight formula
-
-**Why:** `min_dist` is an embedding-space parameter — don't use it to decide Gaussian kernel bandwidth in input space.
-
-**Replace** your `base_bandwidth` calculation with one based on neighbor distances (mean or p50/p95):
-
-```cpp
-// Example: use robust neighbor statistics
-float eps = 1e-6f;
-float mean_neighbor_dist = model->mean_neighbor_distance; // already computed by compute_neighbor_statistics
-float median_neighbor_dist = model->median_neighbor_distance > 0.0f ? model->median_neighbor_distance : mean_neighbor_dist;
-
-// Base bandwidth on median or mean (safer than min_dist)
-float base_bandwidth = std::max(1e-4f, 0.5f * median_neighbor_dist);
-
-// For far-away points, scale conservatively
-float adaptive_bandwidth = base_bandwidth;
-if (distance > base_bandwidth * 2.0f) {
-    adaptive_bandwidth = std::max(adaptive_bandwidth, distance * 0.3f);
-}
-```
-
-**Action:** ensure `compute_neighbor_statistics` computes `median_neighbor_distance` or `mean_neighbor_distance`, and store in `model` for transform to reuse.
-
----
-
-## 5) Confidence / percentile / z-score denominator guards — *where:* after you compute `min_distance`, `p95`, `min_neighbor_distance`, etc.
-
-**Why:** avoid divide-by-zero or huge values when percentiles are degenerate.
-
-**Replace** the denominators with `std::max(epsilon, denom)`:
-
-```cpp
-const float EPS = 1e-8f;
-
-// Confidence
-if (confidence_score) {
-    float denom = std::max(EPS, model->p95_neighbor_distance - model->min_neighbor_distance);
-    float normalized_dist = (min_distance - model->min_neighbor_distance) / denom;
-    confidence_score[i] = std::clamp(1.0f - normalized_dist, 0.0f, 1.0f);
-}
-
-// Percentile rank
-if (percentile_rank) {
-    if (min_distance <= model->min_neighbor_distance) {
-        percentile_rank[i] = 0.0f;
-    } else if (min_distance >= model->p99_neighbor_distance) {
-        percentile_rank[i] = 99.0f;
-    } else {
-        float p95_range = std::max(EPS, model->p95_neighbor_distance - model->min_neighbor_distance);
-        if (min_distance <= model->p95_neighbor_distance) {
-            percentile_rank[i] = 95.0f * (min_distance - model->min_neighbor_distance) / p95_range;
-        } else {
-            float p99_range = std::max(EPS, model->p99_neighbor_distance - model->p95_neighbor_distance);
-            percentile_rank[i] = 95.0f + 4.0f * (min_distance - model->p95_neighbor_distance) / p99_range;
-        }
-    }
-}
-
-// Z-score
-if (z_score) {
-    float denom_z = std::max(EPS, model->std_neighbor_distance);
-    z_score[i] = (min_distance - model->mean_neighbor_distance) / denom_z;
-}
-```
-
-**Notes:** Use `std::clamp` (C++17) to keep confidence in `[0,1]`.
-
----
-
-## 6) Embedding memcpy safety — *where:* at the final copy to the `embedding` output at the end of `uwot_fit_with_progress`
-
-**Why:** raw `memcpy` assumes caller allocated `n_obs * embedding_dim` floats. Better to sanity-check the internal model buffer and copy elementwise.
-
-**Replace** the final `memcpy`:
-
-```cpp
-// Replace this:
-// std::memcpy(embedding, model->embedding.data(),
-//     static_cast<size_t>(n_obs) * static_cast<size_t>(embedding_dim) * sizeof(float));
-
-// With a guarded copy:
-size_t expected = static_cast<size_t>(n_obs) * static_cast<size_t>(embedding_dim);
-if (model->embedding.size() < expected) {
-    return UWOT_ERROR_MEMORY; // Or UWOT_ERROR_INVALID_PARAMS depending on your semantics
-}
-for (size_t i = 0; i < expected; ++i) {
-    embedding[i] = model->embedding[i];
-}
-```
-
-**Optional extra:** Add an API parameter `int out_embedding_dim` that the caller must pass (or verify via `embedding_dim` already present) — return error if `out_embedding_dim != model->embedding_dim`. But the above loop is safer without changing the external API.
-
----
-
-# Additional small improvements to consider (quick list)
-
-* When building HNSW, set `ef` temporarily higher when building neighbors for statistics and then revert (you already partially do this in transform — consider doing similarly when calling `build_knn_graph` if it uses the index).
-* Make sure `compute_neighbor_statistics` and `build_knn_graph` explicitly agree on the same normalization mode and the same HNSW `ef_search` value (store that in `model` and reuse).
-* Log the values of `mean_neighbor_distance`, `p95`, `std` during debugging runs so you can tune the `base_bandwidth` multiplier if needed.
-
----
-
-# Concrete patch plan (apply these 6 small edits)
-
-1. After normalization, unit-normalize vectors if `metric == COSINE`.
-2. After `uwot::smooth_knn` compute `nn_weights`, clamp tiny weights with `MIN_WEIGHT = 1e-6`.
-3. In `compute_neighbor_statistics`, set `model->exact_match_threshold = 1e-3 / sqrt(n_dim)`.
-4. Replace any uses of `model->min_dist` for bandwidth with `0.5 * median_neighbor_distance` or `0.5 * mean_neighbor_distance`.
-5. Replace percentile/score computations with guarded denominators as shown.
-6. Replace final `memcpy` with the guarded loop.
-
----
-
-If you want I can:
-
-* produce a fully patched version of `uwot_fit_with_progress` with the six edits applied (I will output the complete function body with the edits in place), **or**
-* produce a smaller unified patch/diff that you can drop into your codebase.
-
-Which would you prefer? (If you want the full patched function, I’ll paste it in one go so you can copy-paste.)
-
-uwot_save_model
-uwot_load_model
-
-Got it — thanks for pasting your **save/load/info** code.
-This part is actually in good shape, but let me highlight a few **critical checks + small improvements** that will make it fully consistent with the six issues we discussed earlier:
-
----
-
-### 🔑 Observations and Recommendations
-
-1. **Exact-match threshold (issue #3)**
-
-   * You’re not currently saving/loading `exact_match_threshold` in the model file.
-   * If you compute it in `compute_neighbor_statistics`, it should also be persisted here — otherwise `uwot_transform_detailed` may use a default/incorrect threshold after reload.
-     ✅ **Fix:** Add a field to save/load `model->exact_match_threshold` right after neighbor statistics.
-
-   ```cpp
-   // Save
-   file.write(reinterpret_cast<const char*>(&model->exact_match_threshold), sizeof(float));
-
-   // Load
-   file.read(reinterpret_cast<char*>(&model->exact_match_threshold), sizeof(float));
-   ```
-
----
-
-2. **Bandwidth scaling dependency on `min_dist` (issue #4)**
-
-   * You’re already saving `min_dist` and `spread`.
-   * If you replace bandwidth scaling with neighbor-distance–based scaling, you should persist whichever *derived statistic* you rely on (e.g., `median_neighbor_distance`).
-     ✅ **Fix:** Add `median_neighbor_distance` to save/load, next to `mean_neighbor_distance`.
-
----
-
-3. **Confidence / percentile denominator guards (issue #5)**
-
-   * You save `min`, `mean`, `std`, `p95`, `p99`. That’s enough to reconstruct metrics, but remember to use `max(EPS, denom)` when computing after load.
-   * No save/load change needed here — just careful usage.
-
----
-
-4. **Embedding memcpy safety (issue #6)**
-
-   * Good: you serialize embedding size explicitly and resize the vector before reading.
-   * When exposing to API callers, just validate `embedding_dim` × `n_vertices == embedding.size()` before `memcpy`.
-
----
-
-5. **HNSW index consistency**
-   ✅ You’ve added:
-
-   * space factory initialization before load
-   * constructing HNSW with saved `M`, `ef_construction`, `ef_search`
-   * compressed save/load
-   * size check vs. `n_vertices`
-
-   That covers the usual pitfalls.
-
----
-
-6. **Always saving k-NN fallback data (issue #1/#2 tie-in)**
-   ✅ Already implemented (`needs_knn = true`).
-
-   * Just ensure that when you copy back `nn_weights`, you’ve applied the smaller floor (e.g. `1e-6` instead of `0.01`).
-
----
-
-### ⚙️ Suggested Minimal Save/Load Extension
-
-Right after writing neighbor statistics:
-
-```cpp
-// Save neighbor statistics
-file.write(reinterpret_cast<const char*>(&model->min_neighbor_distance), sizeof(float));
-file.write(reinterpret_cast<const char*>(&model->mean_neighbor_distance), sizeof(float));
-file.write(reinterpret_cast<const char*>(&model->std_neighbor_distance), sizeof(float));
-file.write(reinterpret_cast<const char*>(&model->p95_neighbor_distance), sizeof(float));
-file.write(reinterpret_cast<const char*>(&model->p99_neighbor_distance), sizeof(float));
-file.write(reinterpret_cast<const char*>(&model->mild_outlier_threshold), sizeof(float));
-file.write(reinterpret_cast<const char*>(&model->extreme_outlier_threshold), sizeof(float));
-
-// NEW: Save exact-match threshold + median neighbor distance
-file.write(reinterpret_cast<const char*>(&model->exact_match_threshold), sizeof(float));
-file.write(reinterpret_cast<const char*>(&model->median_neighbor_distance), sizeof(float));
-```
-
-And symmetrically on load:
-
-```cpp
-// Read neighbor statistics
-file.read(reinterpret_cast<char*>(&model->min_neighbor_distance), sizeof(float));
-file.read(reinterpret_cast<char*>(&model->mean_neighbor_distance), sizeof(float));
-file.read(reinterpret_cast<char*>(&model->std_neighbor_distance), sizeof(float));
-file.read(reinterpret_cast<char*>(&model->p95_neighbor_distance), sizeof(float));
-file.read(reinterpret_cast<char*>(&model->p99_neighbor_distance), sizeof(float));
-file.read(reinterpret_cast<char*>(&model->mild_outlier_threshold), sizeof(float));
-file.read(reinterpret_cast<char*>(&model->extreme_outlier_threshold), sizeof(float));
-
-// NEW: Load exact-match threshold + median neighbor distance
-file.read(reinterpret_cast<char*>(&model->exact_match_threshold), sizeof(float));
-file.read(reinterpret_cast<char*>(&model->median_neighbor_distance), sizeof(float));
-```
-
----
-
-👉 With these two additions, your model persistence will cover **all six issues** we discussed:
-
-* metric handling (saved through `metric` + normalization mode),
-* weights (through `nn_weights`),
-* exact-match threshold (new),
-* bandwidth scaling (median/mean distance saved),
-* confidence/z-score (already saved `mean/std/p95/p99`),
-* embedding safety (embedding size saved and checked).
-
----
-
-Do you want me to go ahead and **give you a unified patched version of `uwot_save_model` and `uwot_load_model`** with these extra fields wired in, so you can drop it in directly?
-
-
-
+File: uwot_progress_utils.cpp.
+thread_local g_current_epoch_loss good, but if single-threaded, overkill. Impacts: None major.

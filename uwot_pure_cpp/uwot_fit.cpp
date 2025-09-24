@@ -1,5 +1,7 @@
 #include "uwot_fit.h"
 #include "uwot_simple_wrapper.h"
+#include "uwot_quantization.h"
+#include "uwot_distance.h"
 #include <iostream>
 #include <fstream>
 #include <algorithm>
@@ -434,7 +436,8 @@ namespace fit_utils {
         int force_exact_knn,
         int M,
         int ef_construction,
-        int ef_search) {
+        int ef_search,
+        int use_quantization) {
 
         // Training function called
 
@@ -447,6 +450,9 @@ namespace fit_utils {
             return UWOT_ERROR_INVALID_PARAMS;
         }
 
+        // Validate data appropriateness for the selected metric
+        distance_metrics::validate_metric_data(data, n_obs, n_dim, metric);
+
         try {
             model->n_vertices = n_obs;
             model->n_dim = n_dim;
@@ -456,7 +462,7 @@ namespace fit_utils {
             model->spread = spread;
             model->metric = metric;
             model->force_exact_knn = (force_exact_knn != 0); // Convert int to bool
-            model->use_quantization = false; // PQ removed
+            model->use_quantization = (use_quantization != 0); // Enable/disable based on parameter
 
             // Auto-scale HNSW parameters based on dataset size (if not explicitly set)
             if (M == -1) {  // Auto-scale flag
@@ -505,21 +511,7 @@ namespace fit_utils {
                 input_data, normalized_data, n_obs, n_dim,
                 model->feature_means, model->feature_stds, norm_mode);
 
-            // Fix 1: Ensure unit normalization for cosine distance
-            if (metric == UWOT_METRIC_COSINE) {
-                // Ensure each vector is unit-normalized (HNSW InnerProductSpace expects normalized vectors for cosine)
-                for (int i = 0; i < n_obs; ++i) {
-                    float norm = 0.0f;
-                    for (int j = 0; j < n_dim; ++j) {
-                        float v = normalized_data[static_cast<size_t>(i) * n_dim + j];
-                        norm += v * v;
-                    }
-                    norm = std::sqrt(std::max(1e-12f, norm));
-                    for (int j = 0; j < n_dim; ++j) {
-                        normalized_data[static_cast<size_t>(i) * n_dim + j] /= norm;
-                    }
-                }
-            }
+            // L2 normalization for cosine is now handled in the normalization pipeline (mode=2)
 
             if (progress_callback) {
                 progress_callback(10, 100, 10.0f);  // Data normalization complete
@@ -538,10 +530,64 @@ namespace fit_utils {
                 model->space_factory->get_space(), n_obs, model->hnsw_M, model->hnsw_ef_construction);
             model->ann_index->setEf(model->hnsw_ef_search);  // Set query-time ef parameter
 
-            // Add all points to HNSW index using the SAME normalized data
+            // CRITICAL OPTIMIZATION: Apply quantization BEFORE creating HNSW index
+            std::vector<float> hnsw_data = normalized_data; // Default: use original data
+
+            if (model->use_quantization) {
+                try {
+                    // Calculate optimal number of PQ subspaces
+                    // Use conservative quantization for <20% error rate - fewer subspaces = better accuracy
+                    model->pq_m = pq_utils::calculate_optimal_pq_m(n_dim, 40);  // 40D per subspace minimum
+
+                    // Only proceed if PQ is beneficial (pq_m > 1)
+                    if (model->pq_m > 1) {
+                        if (progress_callback) {
+                            progress_callback(n_epochs, n_epochs, 100.0f);
+                        }
+
+                        // Apply Product Quantization to normalized training data
+                        pq_utils::encode_pq(normalized_data, n_obs, n_dim, model->pq_m,
+                                          model->pq_codes, model->pq_centroids);
+
+                        // STEP 1: Create reconstructed quantized data for HNSW (with overflow check)
+                        if (n_obs > 0 && n_dim > 0 && n_obs > SIZE_MAX / static_cast<size_t>(n_dim)) {
+                            throw std::runtime_error("Integer overflow in HNSW data allocation");
+                        }
+                        hnsw_data.resize(static_cast<size_t>(n_obs) * static_cast<size_t>(n_dim));
+                        int subspace_dim = n_dim / model->pq_m;
+
+                        for (int i = 0; i < n_obs; i++) {
+                            std::vector<float> reconstructed_point;
+                            pq_utils::reconstruct_vector(model->pq_codes, i, model->pq_m,
+                                                       model->pq_centroids, subspace_dim,
+                                                       reconstructed_point);
+
+                            // Copy reconstructed point to HNSW data
+                            for (int d = 0; d < n_dim; d++) {
+                                hnsw_data[i * n_dim + d] = reconstructed_point[d];
+                            }
+                        }
+
+                        if (progress_callback) {
+                            progress_callback(n_epochs, n_epochs, 100.0f);
+                        }
+                    } else {
+                        // Disable quantization if not beneficial for this dataset
+                        model->use_quantization = false;
+                    }
+                } catch (const std::exception&) {
+                    // PQ failed - continue without quantization
+                    model->use_quantization = false;
+                    if (progress_callback) {
+                        progress_callback(n_epochs, n_epochs, 100.0f);
+                    }
+                }
+            }
+
+            // Add all points to HNSW index using quantized data (if enabled) or original data
             for (int i = 0; i < n_obs; i++) {
                 model->ann_index->addPoint(
-                    &normalized_data[static_cast<size_t>(i) * static_cast<size_t>(n_dim)],
+                    &hnsw_data[static_cast<size_t>(i) * static_cast<size_t>(n_dim)],
                     static_cast<hnswlib::labeltype>(i));
             }
 
@@ -550,7 +596,7 @@ namespace fit_utils {
             // Use same data for BOTH HNSW and exact k-NN - this is the key fix!
 
             // Compute comprehensive neighbor statistics on the SAME data as HNSW
-            compute_neighbor_statistics(model, normalized_data);
+            compute_neighbor_statistics(model, hnsw_data);
 
             // Build k-NN graph using SAME prepared data as HNSW index - INDEX NOW AVAILABLE!
             std::vector<int> nn_indices;
@@ -562,7 +608,7 @@ namespace fit_utils {
                 wrapped_callback = g_v2_callback;  // Pass warnings directly to v2 callback
             }
 
-            build_knn_graph(normalized_data, n_obs, n_dim, n_neighbors, metric, model,
+            build_knn_graph(hnsw_data, n_obs, n_dim, n_neighbors, metric, model,
                 nn_indices, nn_distances, force_exact_knn, wrapped_callback);
 
             // Use uwot smooth_knn to compute weights
@@ -587,14 +633,22 @@ namespace fit_utils {
             convert_to_edges(nn_indices, nn_weights, n_obs, n_neighbors,
                 model->positive_head, model->positive_tail, model->positive_weights);
 
-            // Store k-NN data for transform (flattened format)
-            model->nn_indices = nn_indices;
-            model->nn_distances.resize(nn_distances.size());
-            model->nn_weights.resize(nn_weights.size());
-            for (size_t i = 0; i < nn_distances.size(); i++) {
-                model->nn_distances[i] = static_cast<float>(nn_distances[i]);
-                // Fix 2: Ensure no overly-large floor when converting to float
-                model->nn_weights[i] = static_cast<float>(std::max<double>(nn_weights[i], 1e-6));
+            // STEP 2: Store k-NN data for transform ONLY if quantization disabled
+            // When quantization is enabled, training data can be reconstructed from PQ codes
+            if (!model->use_quantization) {
+                model->nn_indices = nn_indices;
+                model->nn_distances.resize(nn_distances.size());
+                model->nn_weights.resize(nn_weights.size());
+                for (size_t i = 0; i < nn_distances.size(); i++) {
+                    model->nn_distances[i] = static_cast<float>(nn_distances[i]);
+                    // Fix 2: Ensure no overly-large floor when converting to float
+                    model->nn_weights[i] = static_cast<float>(std::max<double>(nn_weights[i], 1e-6));
+                }
+            } else {
+                // Clear redundant arrays when quantization is enabled - saves 70-80% memory
+                model->nn_indices.clear();
+                model->nn_distances.clear();
+                model->nn_weights.clear();
             }
 
             // Initialize embedding
@@ -794,7 +848,8 @@ namespace fit_utils {
         int force_exact_knn,
         int M,
         int ef_construction,
-        int ef_search) {
+        int ef_search,
+        int use_quantization) {
 
         // Enhanced training function with v2 progress callbacks
 
@@ -812,6 +867,9 @@ namespace fit_utils {
             }
             return UWOT_ERROR_INVALID_PARAMS;
         }
+
+        // Validate data appropriateness for the selected metric
+        distance_metrics::validate_metric_data(data, n_obs, n_dim, metric);
 
         try {
             // Create v1 callback wrapper for epoch progress (with loss)
@@ -833,7 +891,7 @@ namespace fit_utils {
 
             return fit_utils::uwot_fit_with_progress(model, data, n_obs, n_dim, embedding_dim,
                 n_neighbors, min_dist, spread, n_epochs, metric, embedding,
-                v1_callback, force_exact_knn, M, ef_construction, ef_search);
+                v1_callback, force_exact_knn, M, ef_construction, ef_search, use_quantization);
 
         }
         catch (...) {

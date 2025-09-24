@@ -25,25 +25,26 @@ extern "C" {
 
     UWOT_API int uwot_fit_with_progress(
         UwotModel* model,
-        float* input_data,
+        float* data,
         int n_obs,
         int n_dim,
+        int embedding_dim,
         int n_neighbors,
-        int n_epochs,
         float min_dist,
         float spread,
-        int random_state,
+        int n_epochs,
         UwotMetric metric,
         float* embedding,
-        uwot_progress_callback callback,
-        int embedding_dim,
-        int hnsw_M,
-        int hnsw_ef_construction,
-        int hnsw_ef_search
+        uwot_progress_callback progress_callback,
+        int force_exact_knn,
+        int M,
+        int ef_construction,
+        int ef_search,
+        int use_quantization
     ) {
-        return fit_utils::uwot_fit_with_progress(model, input_data, n_obs, n_dim, n_neighbors,
-            n_epochs, min_dist, spread, random_state, metric, embedding, callback,
-            embedding_dim, hnsw_M, hnsw_ef_construction, hnsw_ef_search);
+        return fit_utils::uwot_fit_with_progress(model, data, n_obs, n_dim, embedding_dim, n_neighbors,
+            min_dist, spread, n_epochs, metric, embedding, progress_callback,
+            force_exact_knn, M, ef_construction, ef_search, use_quantization);
     }
 
     UWOT_API int uwot_fit_with_progress_v2(
@@ -62,11 +63,12 @@ extern "C" {
         int force_exact_knn,
         int M,
         int ef_construction,
-        int ef_search
+        int ef_search,
+        int use_quantization
     ) {
         return fit_utils::uwot_fit_with_progress_v2(model, data, n_obs, n_dim, embedding_dim, n_neighbors,
             min_dist, spread, n_epochs, metric, embedding, progress_callback,
-            force_exact_knn, (M == -1) ? 16 : M, (ef_construction == -1) ? 64 : ef_construction, (ef_search == -1) ? 50 : ef_search);
+            force_exact_knn, M, ef_construction, ef_search, use_quantization);
     }
 
     UWOT_API int uwot_transform(

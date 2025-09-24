@@ -26,7 +26,7 @@ extern "C" {
 #define UWOT_ERROR_INVALID_MODEL_FILE -6
 
 // Version information
-#define UWOT_WRAPPER_VERSION_STRING "3.11.0"
+#define UWOT_WRAPPER_VERSION_STRING "3.13.0"
 
 // Distance metrics
     typedef enum {
@@ -81,7 +81,8 @@ extern "C" {
         int force_exact_knn = 0,
         int M = -1,
         int ef_construction = -1,
-        int ef_search = -1);
+        int ef_search = -1,
+        int use_quantization = 0);
 
     UWOT_API int uwot_fit_with_progress_v2(UwotModel* model,
         float* data,
@@ -98,7 +99,8 @@ extern "C" {
         int force_exact_knn = 0,
         int M = -1,
         int ef_construction = -1,
-        int ef_search = -1);
+        int ef_search = -1,
+        int use_quantization = 0);
 
     // Global callback management functions
     UWOT_API void uwot_set_global_callback(uwot_progress_callback_v2 callback);

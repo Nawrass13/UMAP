@@ -74,7 +74,8 @@ namespace fit_utils {
         int force_exact_knn,
         int M,
         int ef_construction,
-        int ef_search
+        int ef_search,
+        int use_quantization = 0
     );
 
     // Enhanced v2 function with loss reporting
@@ -94,6 +95,7 @@ namespace fit_utils {
         int force_exact_knn,
         int M,
         int ef_construction,
-        int ef_search
+        int ef_search,
+        int use_quantization = 0
     );
 }

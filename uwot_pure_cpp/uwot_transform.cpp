@@ -1,5 +1,6 @@
 #include "uwot_transform.h"
 #include "uwot_simple_wrapper.h"
+#include "uwot_quantization.h"
 #include <iostream>
 #include <algorithm>
 #include <numeric>
@@ -50,6 +51,50 @@ namespace transform_utils {
 
                 // Point normalization completed
 
+                // CRITICAL FIX: Apply quantization if model uses it (must match training data space)
+                std::vector<float> search_point = normalized_point; // Default: use normalized point
+
+                if (model->use_quantization && !model->pq_centroids.empty()) {
+                    try {
+                        // Step 1: Quantize the normalized point using saved PQ centroids
+                        std::vector<uint8_t> point_codes;
+                        int subspace_dim = n_dim / model->pq_m;
+                        point_codes.resize(model->pq_m);
+
+                        // Encode single point using existing centroids
+                        for (int sub = 0; sub < model->pq_m; sub++) {
+                            float min_dist = std::numeric_limits<float>::max();
+                            uint8_t best_code = 0;
+
+                            // Find closest centroid in this subspace
+                            for (int c = 0; c < 256; c++) {
+                                float dist = 0.0f;
+                                for (int d = 0; d < subspace_dim; d++) {
+                                    int point_idx = sub * subspace_dim + d;
+                                    int centroid_idx = sub * 256 * subspace_dim + c * subspace_dim + d;
+                                    float diff = normalized_point[point_idx] - model->pq_centroids[centroid_idx];
+                                    dist += diff * diff;
+                                }
+                                if (dist < min_dist) {
+                                    min_dist = dist;
+                                    best_code = c;
+                                }
+                            }
+                            point_codes[sub] = best_code;
+                        }
+
+                        // Step 2: Reconstruct quantized point for HNSW search
+                        std::vector<float> quantized_point;
+                        pq_utils::reconstruct_vector(point_codes, 0, model->pq_m,
+                                                   model->pq_centroids, subspace_dim, quantized_point);
+                        search_point = quantized_point;
+
+                    } catch (...) {
+                        // Quantization failed - fall back to normalized point
+                        search_point = normalized_point;
+                    }
+                }
+
                 // CRITICAL SAFETY CHECK: Ensure HNSW index is valid
                 if (!model->ann_index) {
                     return UWOT_ERROR_MODEL_NOT_FITTED;
@@ -63,8 +108,8 @@ namespace transform_utils {
                 boosted_ef = std::min(boosted_ef, static_cast<size_t>(400));
                 model->ann_index->setEf(std::max(original_ef, boosted_ef));
 
-                // Use HNSW to find nearest neighbors
-                auto search_result = model->ann_index->searchKnn(normalized_point.data(), model->n_neighbors);
+                // Use HNSW to find nearest neighbors (with quantized point if applicable)
+                auto search_result = model->ann_index->searchKnn(search_point.data(), model->n_neighbors);
 
                 model->ann_index->setEf(original_ef); // Restore original
 

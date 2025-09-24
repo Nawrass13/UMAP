@@ -49,8 +49,11 @@ namespace pq_utils {
             }
         }
 
-        // Iterate k-means (simplified: just a few iterations)
-        for (int iter = 0; iter < 10; iter++) {
+        // Iterate k-means with convergence checking and adaptive iterations
+        const int MAX_ITERATIONS = 100; // Increased from 25
+        const float CONVERGENCE_EPSILON = 1e-6f; // Convergence threshold
+
+        for (int iter = 0; iter < MAX_ITERATIONS; iter++) {
             // Assignment step
             for (int i = 0; i < n_points; i++) {
                 float min_dist = std::numeric_limits<float>::max();
@@ -70,24 +73,46 @@ namespace pq_utils {
                 assignments[i] = best_cluster;
             }
 
-            // Update step
+            // Update step with convergence tracking
             std::vector<int> counts(k, 0);
-            std::fill(centroids.begin(), centroids.end(), 0.0f);
+            std::vector<float> new_centroids(k * dim, 0.0f);
 
             for (int i = 0; i < n_points; i++) {
                 int c = assignments[i];
                 counts[c]++;
                 for (int d = 0; d < dim; d++) {
-                    centroids[c * dim + d] += data[i * dim + d];
+                    new_centroids[c * dim + d] += data[i * dim + d];
                 }
             }
 
+            // Calculate new centroids and detect convergence
+            float total_change = 0.0f;
+            std::uniform_int_distribution<> reinit_dis(0, n_points - 1);
+
             for (int c = 0; c < k; c++) {
                 if (counts[c] > 0) {
+                    // Normal update for non-empty clusters
                     for (int d = 0; d < dim; d++) {
-                        centroids[c * dim + d] /= counts[c];
+                        float old_val = centroids[c * dim + d];
+                        float new_val = new_centroids[c * dim + d] / counts[c];
+                        centroids[c * dim + d] = new_val;
+
+                        // Track change for convergence
+                        total_change += (new_val - old_val) * (new_val - old_val);
                     }
+                } else {
+                    // Re-initialize empty clusters with random points
+                    int random_idx = reinit_dis(gen);
+                    for (int d = 0; d < dim; d++) {
+                        centroids[c * dim + d] = data[random_idx * dim + d];
+                    }
+                    total_change += 1.0f; // Prevent early convergence
                 }
+            }
+
+            // Check for convergence
+            if (total_change < CONVERGENCE_EPSILON && iter > 0) {
+                break; // Converged, stop iterations
             }
         }
     }

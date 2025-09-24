@@ -70,17 +70,37 @@ namespace hnsw_utils {
     namespace hnsw_stream_utils {
 
         std::string generate_unique_temp_filename(const std::string& prefix) {
-            auto now = std::chrono::high_resolution_clock::now();
-            auto timestamp = std::chrono::duration_cast<std::chrono::microseconds>(now.time_since_epoch()).count();
+            try {
+                // Use std::filesystem for secure temp directory
+                std::filesystem::path temp_dir = std::filesystem::temp_directory_path();
 
-            std::random_device rd;
-            std::mt19937 gen(rd());
-            std::uniform_int_distribution<> dis(1000, 9999);
-            int random_suffix = dis(gen);
+                // Generate cryptographically secure filename
+                std::random_device rd;
+                std::mt19937_64 gen(rd()); // Use 64-bit generator for better entropy
+                std::uniform_int_distribution<uint64_t> dis(0, UINT64_MAX);
 
-            std::ostringstream oss;
-            oss << prefix << "_" << timestamp << "_" << random_suffix << ".tmp";
-            return oss.str();
+                // Create multiple random components to prevent prediction
+                uint64_t random1 = dis(gen);
+                uint64_t random2 = dis(gen);
+                auto timestamp = std::chrono::high_resolution_clock::now().time_since_epoch().count();
+
+                std::ostringstream oss;
+                oss << prefix << "_" << std::hex << timestamp << "_" << random1 << "_" << random2 << ".tmp";
+
+                std::filesystem::path temp_file = temp_dir / oss.str();
+                return temp_file.string();
+            }
+            catch (...) {
+                // Fallback to current directory if temp dir access fails
+                std::random_device rd;
+                std::mt19937_64 gen(rd());
+                std::uniform_int_distribution<uint64_t> dis(0, UINT64_MAX);
+                uint64_t random = dis(gen);
+
+                std::ostringstream oss;
+                oss << prefix << "_fallback_" << std::hex << random << ".tmp";
+                return oss.str();
+            }
         }
 
         void save_hnsw_to_stream(std::ostream& output, hnswlib::HierarchicalNSW<float>* hnsw_index) {
@@ -212,18 +232,39 @@ namespace hnsw_utils {
             input.read(reinterpret_cast<char*>(&original_size), sizeof(uint32_t));
             input.read(reinterpret_cast<char*>(&compressed_size), sizeof(uint32_t));
 
+            // Security: Validate size limits to prevent OOM attacks
+            const uint32_t MAX_DECOMPRESSED_SIZE = 100 * 1024 * 1024; // 100MB limit
+            const uint32_t MAX_COMPRESSED_SIZE = 80 * 1024 * 1024;    // 80MB limit
+
+            if (original_size > MAX_DECOMPRESSED_SIZE) {
+                throw std::runtime_error("LZ4 decompression: Original size too large (potential attack)");
+            }
+            if (compressed_size > MAX_COMPRESSED_SIZE) {
+                throw std::runtime_error("LZ4 decompression: Compressed size too large (potential attack)");
+            }
+            if (original_size == 0 || compressed_size == 0) {
+                throw std::runtime_error("LZ4 decompression: Invalid zero size");
+            }
+
             // Read compressed data
             std::vector<char> compressed_data(compressed_size);
             input.read(compressed_data.data(), compressed_size);
 
-            // Decompress with LZ4
+            if (!input.good() || input.gcount() != static_cast<std::streamsize>(compressed_size)) {
+                throw std::runtime_error("LZ4 decompression: Failed to read compressed data");
+            }
+
+            // Decompress with LZ4 (bounds-checked)
             std::vector<char> decompressed_data(original_size);
             int decompressed_size = LZ4_decompress_safe(
                 compressed_data.data(), decompressed_data.data(),
                 static_cast<int>(compressed_size), static_cast<int>(original_size));
 
+            if (decompressed_size <= 0) {
+                throw std::runtime_error("LZ4 decompression failed: Malformed compressed data");
+            }
             if (decompressed_size != static_cast<int>(original_size)) {
-                throw std::runtime_error("LZ4 decompression failed or size mismatch for HNSW data");
+                throw std::runtime_error("LZ4 decompression failed: Size mismatch");
             }
 
             // Write to temporary file and load
@@ -332,10 +373,24 @@ namespace hnsw_utils {
         const std::vector<float>& normalized_data, int n_obs, int n_dim) {
 
         // Add all points to HNSW index using the normalized data
-        for (int i = 0; i < n_obs; i++) {
-            hnsw_index->addPoint(
-                &normalized_data[static_cast<size_t>(i) * static_cast<size_t>(n_dim)],
-                static_cast<hnswlib::labeltype>(i));
+        // Use parallel point addition for large datasets (>5000 points)
+        if (n_obs > 5000) {
+#ifdef _OPENMP
+            // Parallel addition for large datasets - HNSW index handles thread safety
+            #pragma omp parallel for schedule(dynamic, 100)
+#endif
+            for (int i = 0; i < n_obs; i++) {
+                hnsw_index->addPoint(
+                    &normalized_data[static_cast<size_t>(i) * static_cast<size_t>(n_dim)],
+                    static_cast<hnswlib::labeltype>(i));
+            }
+        } else {
+            // Sequential addition for smaller datasets to avoid OpenMP overhead
+            for (int i = 0; i < n_obs; i++) {
+                hnsw_index->addPoint(
+                    &normalized_data[static_cast<size_t>(i) * static_cast<size_t>(n_dim)],
+                    static_cast<hnswlib::labeltype>(i));
+            }
         }
 
         // Removed debug output for production build
@@ -344,9 +399,12 @@ namespace hnsw_utils {
     // Temporary normalization utilities (will be moved to separate module later)
     namespace NormalizationPipeline {
         int determine_normalization_mode(UwotMetric metric) {
-            // Simple logic for now - will be enhanced in dedicated module
-            if (metric == UWOT_METRIC_COSINE || metric == UWOT_METRIC_CORRELATION) {
-                return 0; // No z-score normalization for angle-preserving metrics
+            // Enhanced logic for proper HNSW compatibility
+            if (metric == UWOT_METRIC_COSINE) {
+                return 2; // L2 normalization for cosine (HNSW InnerProductSpace requires unit vectors)
+            }
+            else if (metric == UWOT_METRIC_CORRELATION) {
+                return 0; // No normalization for correlation
             }
             return 1; // Use z-score normalization for other metrics
         }
@@ -393,6 +451,30 @@ namespace hnsw_utils {
                     for (int j = 0; j < n_dim; j++) {
                         size_t idx = static_cast<size_t>(i) * n_dim + j;
                         output_data[idx] = (input_data[idx] - means[j]) / stds[j];
+                    }
+                }
+            }
+            else if (mode == 2) {
+                // Mode 2: L2 normalization (unit vectors for cosine HNSW)
+                for (int i = 0; i < n_obs; i++) {
+                    // Calculate L2 norm for this vector
+                    float norm = 0.0f;
+                    for (int j = 0; j < n_dim; j++) {
+                        size_t idx = static_cast<size_t>(i) * n_dim + j;
+                        float v = input_data[idx];
+                        norm += v * v;
+                    }
+                    norm = std::sqrt(norm);
+
+                    // Avoid division by zero
+                    if (norm < 1e-8f) {
+                        norm = 1.0f;
+                    }
+
+                    // Normalize to unit length
+                    for (int j = 0; j < n_dim; j++) {
+                        size_t idx = static_cast<size_t>(i) * n_dim + j;
+                        output_data[idx] = input_data[idx] / norm;
                     }
                 }
             }

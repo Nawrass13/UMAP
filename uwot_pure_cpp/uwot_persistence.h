@@ -17,6 +17,4 @@ namespace persistence_utils {
     void load_hnsw_from_stream_compressed(std::istream& input, hnswlib::HierarchicalNSW<float>* hnsw_index,
         hnswlib::SpaceInterface<float>* space);
 
-    // Model state debugging
-    void debug_print_model_state(UwotModel* model, const char* context);
 }

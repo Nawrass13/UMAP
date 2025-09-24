@@ -83,7 +83,15 @@
       "Bash(taskkill:*)",
       "Bash(./test_error_fixes_simple.exe)",
       "Bash(./test_comprehensive_pipeline.exe)",
-      "Bash(./test_standard_comprehensive.exe)"
+      "Bash(./test_standard_comprehensive.exe)",
+      "Bash(./test_enhanced_wrapper.exe)",
+      "Bash(findstr:*)",
+      "Bash(dir:*)",
+      "Bash(publish_nuget_interactive.bat)",
+      "Bash(powershell:*)",
+      "Bash(./test_quantization_comprehensive.exe)",
+      "Bash(\"C:\\Program Files\\Microsoft Visual Studio\\2022\\Professional\\VC\\Tools\\MSVC\\14.44.35207\\bin\\Hostx64\\x64\\cl.exe\" /I\".\" test_comprehensive_pipeline.cpp uwot_simple_wrapper.cpp lz4.c /Fe:test_comprehensive_pipeline.exe /std:c++17 /openmp /EHsc)",
+      "Bash(\"C:\\Program Files\\Microsoft Visual Studio\\2022\\Professional\\VC\\Tools\\MSVC\\14.44.35207\\bin\\Hostx64\\x64\\cl.exe\" /I\"..\" ../test_metric_validation.cpp Release/uwot.lib /Fe:test_metric_validation.exe /std:c++17 /EHsc)"
     ],
     "deny": [],
     "ask": []

@@ -344,7 +344,7 @@ int main() {
     std::cout << "\n📊 Detailed Results:" << std::endl;
     std::cout << "Dimension      Fit vs Transform MSE    Save/Load MSE         1% Error Rate    Variety    Loss Conv" << std::endl;
     std::cout << "---------------------------------------------------------------------------------------------" << std::endl;
-    printf("2D             %.6f (%.1s)           %.6f (%.1s)        %.1f%% (%.1s)        %s        %s\n",
+    printf("2D             %.6f (%s)           %.6f (%s)        %.1f%% (%s)        %s        %s\n",
            results.fit_transform_mse_2d,
            results.fit_transform_mse_2d < MAX_ALLOWED_FIT_TRANSFORM_MSE ? "✅" : "❌",
            results.save_load_mse_2d,
@@ -354,7 +354,7 @@ int main() {
            results.coordinate_variety_2d ? "✅" : "❌",
            results.loss_convergence_2d ? "✅" : "❌");
 
-    printf("20D            %.6f (%.1s)           %.6f (%.1s)        %.1f%% (%.1s)        %s        %s\n",
+    printf("20D            %.6f (%s)           %.6f (%s)        %.1f%% (%s)        %s        %s\n",
            results.fit_transform_mse_20d,
            results.fit_transform_mse_20d < MAX_ALLOWED_FIT_TRANSFORM_MSE ? "✅" : "❌",
            results.save_load_mse_20d,

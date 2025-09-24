@@ -135,6 +135,13 @@ if(BUILD_TESTS)
     if(OpenMP_CXX_FOUND)
         target_link_libraries(test_enhanced_wrapper OpenMP::OpenMP_CXX)
     endif()
+
+    # Comprehensive quantization pipeline test with >1% diff stats
+    add_executable(test_quantization_comprehensive test_quantization_comprehensive.cpp)
+    target_link_libraries(test_quantization_comprehensive uwot_wrapper)
+    if(OpenMP_CXX_FOUND)
+        target_link_libraries(test_quantization_comprehensive OpenMP::OpenMP_CXX)
+    endif()
 endif()
 
 # Package configuration

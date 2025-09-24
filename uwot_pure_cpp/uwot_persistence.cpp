@@ -1,4 +1,5 @@
 #include "uwot_persistence.h"
+#include "uwot_quantization.h"
 #include "lz4.h"
 #include <algorithm>
 #include <vector>
@@ -7,12 +8,52 @@
 
 namespace persistence_utils {
 
-    void debug_print_model_state(UwotModel* model, const char* context) {
-        // Debug output disabled for production build
-        // Model state validation completed internally
-        (void)model; // Suppress unused parameter warning
-        (void)context; // Suppress unused parameter warning
+    // Endian-safe serialization utilities
+    namespace endian_utils {
+
+        // Check if system is little-endian
+        bool is_little_endian() {
+            uint16_t test = 0x1234;
+            return *reinterpret_cast<uint8_t*>(&test) == 0x34;
+        }
+
+        // Convert to little-endian (portable format)
+        template<typename T>
+        void to_little_endian(T& value) {
+            if (!is_little_endian()) {
+                // Swap bytes for big-endian systems
+                uint8_t* bytes = reinterpret_cast<uint8_t*>(&value);
+                for (size_t i = 0; i < sizeof(T) / 2; ++i) {
+                    std::swap(bytes[i], bytes[sizeof(T) - 1 - i]);
+                }
+            }
+        }
+
+        // Convert from little-endian to native
+        template<typename T>
+        void from_little_endian(T& value) {
+            to_little_endian(value); // Same operation - byte swap if needed
+        }
+
+        // Safe write with endian conversion
+        template<typename T>
+        void write_value(std::ostream& stream, const T& value) {
+            T temp = value;
+            to_little_endian(temp);
+            stream.write(reinterpret_cast<const char*>(&temp), sizeof(T));
+        }
+
+        // Safe read with endian conversion
+        template<typename T>
+        bool read_value(std::istream& stream, T& value) {
+            if (!stream.read(reinterpret_cast<char*>(&value), sizeof(T))) {
+                return false;
+            }
+            from_little_endian(value);
+            return true;
+        }
     }
+
 
     void save_hnsw_to_stream_compressed(std::ostream& output, hnswlib::HierarchicalNSW<float>* hnsw_index) {
         std::string temp_filename = hnsw_utils::hnsw_stream_utils::generate_unique_temp_filename("hnsw_compressed");
@@ -52,8 +93,8 @@ namespace persistence_utils {
             uint32_t original_size = static_cast<uint32_t>(file_size);
             uint32_t comp_size = static_cast<uint32_t>(compressed_size);
 
-            output.write(reinterpret_cast<const char*>(&original_size), sizeof(uint32_t));
-            output.write(reinterpret_cast<const char*>(&comp_size), sizeof(uint32_t));
+            endian_utils::write_value(output, original_size);
+            endian_utils::write_value(output, comp_size);
             output.write(compressed_data.data(), compressed_size);
 
             // Clean up
@@ -70,28 +111,46 @@ namespace persistence_utils {
         std::string temp_filename;
 
         try {
-            // Read LZ4 compression headers with validation
+            // Read LZ4 compression headers with validation (endian-safe)
             uint32_t original_size, compressed_size;
-            input.read(reinterpret_cast<char*>(&original_size), sizeof(uint32_t));
-            input.read(reinterpret_cast<char*>(&compressed_size), sizeof(uint32_t));
-
-            // Sanity check on sizes
-            if (original_size > 500 * 1024 * 1024 || compressed_size > 500 * 1024 * 1024) {
-                throw std::runtime_error("HNSW compressed data size exceeds reasonable limits");
+            if (!endian_utils::read_value(input, original_size) ||
+                !endian_utils::read_value(input, compressed_size)) {
+                throw std::runtime_error("Failed to read LZ4 compression headers");
             }
 
-            // Read compressed data
+            // Enhanced security validation for LZ4 decompression
+            const uint32_t MAX_DECOMPRESSED_SIZE = 100 * 1024 * 1024; // 100MB limit
+            const uint32_t MAX_COMPRESSED_SIZE = 80 * 1024 * 1024;    // 80MB limit
+
+            if (original_size > MAX_DECOMPRESSED_SIZE) {
+                throw std::runtime_error("LZ4 decompression: HNSW original size too large (potential attack)");
+            }
+            if (compressed_size > MAX_COMPRESSED_SIZE) {
+                throw std::runtime_error("LZ4 decompression: HNSW compressed size too large (potential attack)");
+            }
+            if (original_size == 0 || compressed_size == 0) {
+                throw std::runtime_error("LZ4 decompression: Invalid zero size for HNSW data");
+            }
+
+            // Read compressed data with validation
             std::vector<char> compressed_data(compressed_size);
             input.read(compressed_data.data(), compressed_size);
 
-            // Decompress with LZ4
+            if (!input.good() || input.gcount() != static_cast<std::streamsize>(compressed_size)) {
+                throw std::runtime_error("LZ4 decompression: Failed to read HNSW compressed data");
+            }
+
+            // Decompress with LZ4 (bounds-checked)
             std::vector<char> decompressed_data(original_size);
             int decompressed_size = LZ4_decompress_safe(
                 compressed_data.data(), decompressed_data.data(),
                 static_cast<int>(compressed_size), static_cast<int>(original_size));
 
+            if (decompressed_size <= 0) {
+                throw std::runtime_error("LZ4 decompression failed: Malformed HNSW compressed data");
+            }
             if (decompressed_size != static_cast<int>(original_size)) {
-                throw std::runtime_error("LZ4 decompression failed or size mismatch for HNSW data");
+                throw std::runtime_error("LZ4 decompression failed: HNSW size mismatch");
             }
 
             // Write to temporary file and load
@@ -123,7 +182,6 @@ namespace persistence_utils {
             return UWOT_ERROR_INVALID_PARAMS;
         }
 
-        debug_print_model_state(model, "SAVE");
 
         std::ofstream file(filename, std::ios::binary);
         if (!file.is_open()) {
@@ -131,78 +189,156 @@ namespace persistence_utils {
         }
 
         try {
-            // Version and basic model parameters
+            // Magic number for file format validation (4 bytes)
+            const uint32_t magic = 0x554D4150; // "UMAP" in ASCII
+            endian_utils::write_value(file, magic);
+
+            // File format version (4 bytes)
+            const uint32_t format_version = 1;
+            endian_utils::write_value(file, format_version);
+
+            // Library version (16 bytes) - keep as string for compatibility
             file.write(UWOT_WRAPPER_VERSION_STRING, 16);
-            file.write(reinterpret_cast<const char*>(&model->n_vertices), sizeof(int));
-            file.write(reinterpret_cast<const char*>(&model->n_dim), sizeof(int));
-            file.write(reinterpret_cast<const char*>(&model->embedding_dim), sizeof(int));
-            file.write(reinterpret_cast<const char*>(&model->n_neighbors), sizeof(int));
-            file.write(reinterpret_cast<const char*>(&model->min_dist), sizeof(float));
-            file.write(reinterpret_cast<const char*>(&model->spread), sizeof(float));
-            file.write(reinterpret_cast<const char*>(&model->metric), sizeof(UwotMetric));
-            file.write(reinterpret_cast<const char*>(&model->a), sizeof(float));
-            file.write(reinterpret_cast<const char*>(&model->b), sizeof(float));
 
-            // HNSW parameters
-            file.write(reinterpret_cast<const char*>(&model->hnsw_M), sizeof(int));
-            file.write(reinterpret_cast<const char*>(&model->hnsw_ef_construction), sizeof(int));
-            file.write(reinterpret_cast<const char*>(&model->hnsw_ef_search), sizeof(int));
+            // Basic model parameters (endian-safe)
+            endian_utils::write_value(file, model->n_vertices);
+            endian_utils::write_value(file, model->n_dim);
+            endian_utils::write_value(file, model->embedding_dim);
+            endian_utils::write_value(file, model->n_neighbors);
+            endian_utils::write_value(file, model->min_dist);
+            endian_utils::write_value(file, model->spread);
+            endian_utils::write_value(file, static_cast<int>(model->metric));
+            endian_utils::write_value(file, model->a);
+            endian_utils::write_value(file, model->b);
 
-            // Neighbor statistics
-            file.write(reinterpret_cast<const char*>(&model->mean_neighbor_distance), sizeof(float));
-            file.write(reinterpret_cast<const char*>(&model->std_neighbor_distance), sizeof(float));
-            file.write(reinterpret_cast<const char*>(&model->min_neighbor_distance), sizeof(float));
-            file.write(reinterpret_cast<const char*>(&model->p95_neighbor_distance), sizeof(float));
-            file.write(reinterpret_cast<const char*>(&model->p99_neighbor_distance), sizeof(float));
-            file.write(reinterpret_cast<const char*>(&model->mild_outlier_threshold), sizeof(float));
-            file.write(reinterpret_cast<const char*>(&model->extreme_outlier_threshold), sizeof(float));
-            file.write(reinterpret_cast<const char*>(&model->median_neighbor_distance), sizeof(float));
-            file.write(reinterpret_cast<const char*>(&model->exact_match_threshold), sizeof(float));
+            // HNSW parameters (endian-safe)
+            endian_utils::write_value(file, model->hnsw_M);
+            endian_utils::write_value(file, model->hnsw_ef_construction);
+            endian_utils::write_value(file, model->hnsw_ef_search);
 
-            // Normalization parameters
+            // Neighbor statistics (endian-safe)
+            endian_utils::write_value(file, model->mean_neighbor_distance);
+            endian_utils::write_value(file, model->std_neighbor_distance);
+            endian_utils::write_value(file, model->min_neighbor_distance);
+            endian_utils::write_value(file, model->p95_neighbor_distance);
+            endian_utils::write_value(file, model->p99_neighbor_distance);
+            endian_utils::write_value(file, model->mild_outlier_threshold);
+            endian_utils::write_value(file, model->extreme_outlier_threshold);
+            endian_utils::write_value(file, model->median_neighbor_distance);
+            endian_utils::write_value(file, model->exact_match_threshold);
+
+            // Normalization parameters (endian-safe)
             bool has_normalization = !model->feature_means.empty() && !model->feature_stds.empty();
-            file.write(reinterpret_cast<const char*>(&has_normalization), sizeof(bool));
+            endian_utils::write_value(file, has_normalization);
             if (has_normalization) {
-                file.write(reinterpret_cast<const char*>(model->feature_means.data()), model->n_dim * sizeof(float));
-                file.write(reinterpret_cast<const char*>(model->feature_stds.data()), model->n_dim * sizeof(float));
-                file.write(reinterpret_cast<const char*>(&model->normalization_mode), sizeof(int));
+                // Write feature means (endian-safe)
+                for (int i = 0; i < model->n_dim; i++) {
+                    endian_utils::write_value(file, model->feature_means[i]);
+                }
+                // Write feature standard deviations (endian-safe)
+                for (int i = 0; i < model->n_dim; i++) {
+                    endian_utils::write_value(file, model->feature_stds[i]);
+                }
+                endian_utils::write_value(file, model->normalization_mode);
             }
 
-            // Embedding data
+            // Embedding data - compressed with LZ4 for smaller file size
             size_t embedding_size = model->embedding.size();
-            file.write(reinterpret_cast<const char*>(&embedding_size), sizeof(size_t));
-            file.write(reinterpret_cast<const char*>(model->embedding.data()), embedding_size * sizeof(float));
 
-            // k-NN data - ALWAYS save for exact reproducibility
-            // Always saving k-NN data for exact reproducibility
-            bool needs_knn = true;
-            file.write(reinterpret_cast<const char*>(&needs_knn), sizeof(bool));
+            if (embedding_size > 0) {
+                // Compress embedding data with LZ4
+                size_t uncompressed_bytes = embedding_size * sizeof(float);
+                int max_compressed_size = LZ4_compressBound(static_cast<int>(uncompressed_bytes));
+                std::vector<char> compressed_data(max_compressed_size);
+
+                int compressed_bytes = LZ4_compress_default(
+                    reinterpret_cast<const char*>(model->embedding.data()),
+                    compressed_data.data(),
+                    static_cast<int>(uncompressed_bytes),
+                    max_compressed_size);
+
+                if (compressed_bytes > 0) {
+                    // Write: embedding_size, uncompressed_bytes, compressed_bytes, compressed_data (endian-safe)
+                    endian_utils::write_value(file, embedding_size);
+                    uint32_t uncompressed_size = static_cast<uint32_t>(uncompressed_bytes);
+                    uint32_t comp_size = static_cast<uint32_t>(compressed_bytes);
+                    endian_utils::write_value(file, uncompressed_size);
+                    endian_utils::write_value(file, comp_size);
+                    file.write(compressed_data.data(), compressed_bytes);
+                } else {
+                    // Compression failed - fall back to uncompressed (endian-safe)
+                    endian_utils::write_value(file, embedding_size);
+                    uint32_t uncompressed_size = static_cast<uint32_t>(uncompressed_bytes);
+                    uint32_t comp_size = 0; // 0 = uncompressed
+                    endian_utils::write_value(file, uncompressed_size);
+                    endian_utils::write_value(file, comp_size);
+                    // Write raw float data (endian conversion needed for floats)
+                    for (size_t i = 0; i < embedding_size; i++) {
+                        endian_utils::write_value(file, model->embedding[i]);
+                    }
+                }
+            } else {
+                // No embedding data (endian-safe)
+                endian_utils::write_value(file, embedding_size);
+                uint32_t zero = 0;
+                endian_utils::write_value(file, zero);
+                endian_utils::write_value(file, zero);
+            }
+
+            // k-NN data - Only save when NOT using quantization (quantization uses PQ codes instead)
+            // CRITICAL OPTIMIZATION: Skip k-NN data when quantization enabled - saves massive file space
+            bool needs_knn = !model->use_quantization;  // Use PQ codes instead when quantized
+            endian_utils::write_value(file, needs_knn);
 
             if (needs_knn) {
                 size_t indices_size = model->nn_indices.size();
                 size_t distances_size = model->nn_distances.size();
                 size_t weights_size = model->nn_weights.size();
 
-                file.write(reinterpret_cast<const char*>(&indices_size), sizeof(size_t));
-                file.write(reinterpret_cast<const char*>(&distances_size), sizeof(size_t));
-                file.write(reinterpret_cast<const char*>(&weights_size), sizeof(size_t));
+                endian_utils::write_value(file, indices_size);
+                endian_utils::write_value(file, distances_size);
+                endian_utils::write_value(file, weights_size);
 
-                if (indices_size > 0) {
-                    file.write(reinterpret_cast<const char*>(model->nn_indices.data()), indices_size * sizeof(int));
+                // Write k-NN indices (endian-safe)
+                for (size_t i = 0; i < indices_size; i++) {
+                    endian_utils::write_value(file, model->nn_indices[i]);
                 }
-                if (distances_size > 0) {
-                    file.write(reinterpret_cast<const char*>(model->nn_distances.data()), distances_size * sizeof(float));
+                // Write k-NN distances (endian-safe)
+                for (size_t i = 0; i < distances_size; i++) {
+                    endian_utils::write_value(file, model->nn_distances[i]);
                 }
-                if (weights_size > 0) {
-                    file.write(reinterpret_cast<const char*>(model->nn_weights.data()), weights_size * sizeof(float));
+                // Write k-NN weights (endian-safe)
+                for (size_t i = 0; i < weights_size; i++) {
+                    endian_utils::write_value(file, model->nn_weights[i]);
                 }
             }
 
-            // Save HNSW index directly to stream
-            if (model->ann_index) {
+            // Quantization data (PQ - Product Quantization) (endian-safe)
+            endian_utils::write_value(file, model->use_quantization);
+            endian_utils::write_value(file, model->pq_m);
+
+            if (model->use_quantization) {
+                // Save PQ codes
+                size_t pq_codes_size = model->pq_codes.size();
+                endian_utils::write_value(file, pq_codes_size);
+                // PQ codes are uint8_t - no endian conversion needed
+                if (pq_codes_size > 0) {
+                    file.write(reinterpret_cast<const char*>(model->pq_codes.data()), pq_codes_size * sizeof(uint8_t));
+                }
+
+                // Save PQ centroids (endian-safe)
+                size_t pq_centroids_size = model->pq_centroids.size();
+                endian_utils::write_value(file, pq_centroids_size);
+                for (size_t i = 0; i < pq_centroids_size; i++) {
+                    endian_utils::write_value(file, model->pq_centroids[i]);
+                }
+            }
+
+            // Save HNSW index directly to stream - SKIP for quantized models (can rebuild from PQ codes)
+            if (model->ann_index && !model->use_quantization) {
                 try {
                     size_t placeholder_size = 0;
-                    file.write(reinterpret_cast<const char*>(&placeholder_size), sizeof(size_t));
+                    endian_utils::write_value(file, placeholder_size);
 
                     std::streampos hnsw_data_start = file.tellp();
 
@@ -211,23 +347,23 @@ namespace persistence_utils {
 
                     std::streampos hnsw_data_end = file.tellp();
 
-                    // Calculate actual size and update the placeholder
+                    // Calculate actual size and update the placeholder (endian-safe)
                     size_t actual_hnsw_size = static_cast<size_t>(hnsw_data_end - hnsw_data_start);
                     file.seekp(hnsw_data_start - static_cast<std::streamoff>(sizeof(size_t)));
-                    file.write(reinterpret_cast<const char*>(&actual_hnsw_size), sizeof(size_t));
+                    endian_utils::write_value(file, actual_hnsw_size);
                     file.seekp(hnsw_data_end);
                 }
                 catch (const std::exception&) {
-                    // HNSW save failed - write zero size to indicate no HNSW data
+                    // HNSW save failed - write zero size to indicate no HNSW data (endian-safe)
                     size_t zero_size = 0;
-                    file.write(reinterpret_cast<const char*>(&zero_size), sizeof(size_t));
+                    endian_utils::write_value(file, zero_size);
                     send_warning_to_callback("HNSW index save failed - transforms may be slower");
                 }
             }
             else {
-                // No HNSW index - write zero size
+                // No HNSW index - write zero size (endian-safe)
                 size_t zero_size = 0;
-                file.write(reinterpret_cast<const char*>(&zero_size), sizeof(size_t));
+                endian_utils::write_value(file, zero_size);
             }
 
             file.close();
@@ -256,89 +392,245 @@ namespace persistence_utils {
                 return nullptr;
             }
 
-            // Read and verify version
+            // Read and verify magic number and version (endian-safe)
+            uint32_t magic;
+            if (!endian_utils::read_value(file, magic)) {
+                throw std::runtime_error("Failed to read magic number");
+            }
+            if (magic != 0x554D4150) { // "UMAP" in ASCII
+                throw std::runtime_error("Invalid file format: magic number mismatch");
+            }
+
+            uint32_t format_version;
+            if (!endian_utils::read_value(file, format_version)) {
+                throw std::runtime_error("Failed to read format version");
+            }
+            if (format_version != 1) {
+                send_warning_to_callback("Unsupported format version - attempting to load anyway");
+            }
+
+            // Read library version (16 bytes) - keep as string for compatibility
             char version[17] = { 0 };
             file.read(version, 16);
             if (strcmp(version, UWOT_WRAPPER_VERSION_STRING) != 0) {
                 send_warning_to_callback("Model version mismatch - attempting to load anyway");
             }
 
-            // Read basic model parameters
-            file.read(reinterpret_cast<char*>(&model->n_vertices), sizeof(int));
-            file.read(reinterpret_cast<char*>(&model->n_dim), sizeof(int));
-            file.read(reinterpret_cast<char*>(&model->embedding_dim), sizeof(int));
-            file.read(reinterpret_cast<char*>(&model->n_neighbors), sizeof(int));
-            file.read(reinterpret_cast<char*>(&model->min_dist), sizeof(float));
-            file.read(reinterpret_cast<char*>(&model->spread), sizeof(float));
-            file.read(reinterpret_cast<char*>(&model->metric), sizeof(UwotMetric));
-            file.read(reinterpret_cast<char*>(&model->a), sizeof(float));
-            file.read(reinterpret_cast<char*>(&model->b), sizeof(float));
+            // Read basic model parameters (endian-safe)
+            if (!endian_utils::read_value(file, model->n_vertices) ||
+                !endian_utils::read_value(file, model->n_dim) ||
+                !endian_utils::read_value(file, model->embedding_dim) ||
+                !endian_utils::read_value(file, model->n_neighbors) ||
+                !endian_utils::read_value(file, model->min_dist) ||
+                !endian_utils::read_value(file, model->spread)) {
+                throw std::runtime_error("Failed to read basic model parameters");
+            }
 
-            // Read HNSW parameters
-            file.read(reinterpret_cast<char*>(&model->hnsw_M), sizeof(int));
-            file.read(reinterpret_cast<char*>(&model->hnsw_ef_construction), sizeof(int));
-            file.read(reinterpret_cast<char*>(&model->hnsw_ef_search), sizeof(int));
+            int metric_value;
+            if (!endian_utils::read_value(file, metric_value)) {
+                throw std::runtime_error("Failed to read metric parameter");
+            }
+            model->metric = static_cast<UwotMetric>(metric_value);
 
-            // Read neighbor statistics
-            file.read(reinterpret_cast<char*>(&model->mean_neighbor_distance), sizeof(float));
-            file.read(reinterpret_cast<char*>(&model->std_neighbor_distance), sizeof(float));
-            file.read(reinterpret_cast<char*>(&model->min_neighbor_distance), sizeof(float));
-            file.read(reinterpret_cast<char*>(&model->p95_neighbor_distance), sizeof(float));
-            file.read(reinterpret_cast<char*>(&model->p99_neighbor_distance), sizeof(float));
-            file.read(reinterpret_cast<char*>(&model->mild_outlier_threshold), sizeof(float));
-            file.read(reinterpret_cast<char*>(&model->extreme_outlier_threshold), sizeof(float));
-            file.read(reinterpret_cast<char*>(&model->median_neighbor_distance), sizeof(float));
-            file.read(reinterpret_cast<char*>(&model->exact_match_threshold), sizeof(float));
+            if (!endian_utils::read_value(file, model->a) ||
+                !endian_utils::read_value(file, model->b)) {
+                throw std::runtime_error("Failed to read curve parameters");
+            }
 
-            // Read normalization parameters
+            // Read HNSW parameters (endian-safe)
+            if (!endian_utils::read_value(file, model->hnsw_M) ||
+                !endian_utils::read_value(file, model->hnsw_ef_construction) ||
+                !endian_utils::read_value(file, model->hnsw_ef_search)) {
+                throw std::runtime_error("Failed to read HNSW parameters");
+            }
+
+            // Read neighbor statistics (endian-safe)
+            if (!endian_utils::read_value(file, model->mean_neighbor_distance) ||
+                !endian_utils::read_value(file, model->std_neighbor_distance) ||
+                !endian_utils::read_value(file, model->min_neighbor_distance) ||
+                !endian_utils::read_value(file, model->p95_neighbor_distance) ||
+                !endian_utils::read_value(file, model->p99_neighbor_distance) ||
+                !endian_utils::read_value(file, model->mild_outlier_threshold) ||
+                !endian_utils::read_value(file, model->extreme_outlier_threshold) ||
+                !endian_utils::read_value(file, model->median_neighbor_distance) ||
+                !endian_utils::read_value(file, model->exact_match_threshold)) {
+                throw std::runtime_error("Failed to read neighbor statistics");
+            }
+
+            // Read normalization parameters (endian-safe)
             bool has_normalization;
-            file.read(reinterpret_cast<char*>(&has_normalization), sizeof(bool));
+            if (!endian_utils::read_value(file, has_normalization)) {
+                throw std::runtime_error("Failed to read normalization flag");
+            }
             if (has_normalization) {
                 model->feature_means.resize(model->n_dim);
                 model->feature_stds.resize(model->n_dim);
-                file.read(reinterpret_cast<char*>(model->feature_means.data()), model->n_dim * sizeof(float));
-                file.read(reinterpret_cast<char*>(model->feature_stds.data()), model->n_dim * sizeof(float));
-                file.read(reinterpret_cast<char*>(&model->normalization_mode), sizeof(int));
+
+                // Read feature means (endian-safe)
+                for (int i = 0; i < model->n_dim; i++) {
+                    if (!endian_utils::read_value(file, model->feature_means[i])) {
+                        throw std::runtime_error("Failed to read feature means");
+                    }
+                }
+
+                // Read feature standard deviations (endian-safe)
+                for (int i = 0; i < model->n_dim; i++) {
+                    if (!endian_utils::read_value(file, model->feature_stds[i])) {
+                        throw std::runtime_error("Failed to read feature standard deviations");
+                    }
+                }
+
+                if (!endian_utils::read_value(file, model->normalization_mode)) {
+                    throw std::runtime_error("Failed to read normalization mode");
+                }
                 model->use_normalization = true;
             }
 
-            // Read embedding data
+            // Read embedding data - handle both compressed and uncompressed formats (endian-safe)
             size_t embedding_size;
-            file.read(reinterpret_cast<char*>(&embedding_size), sizeof(size_t));
+            if (!endian_utils::read_value(file, embedding_size)) {
+                throw std::runtime_error("Failed to read embedding size");
+            }
             model->embedding.resize(embedding_size);
-            file.read(reinterpret_cast<char*>(model->embedding.data()), embedding_size * sizeof(float));
 
-            // Read k-NN data
+            if (embedding_size > 0) {
+                uint32_t uncompressed_size, compressed_size;
+                if (!endian_utils::read_value(file, uncompressed_size) ||
+                    !endian_utils::read_value(file, compressed_size)) {
+                    throw std::runtime_error("Failed to read embedding compression headers");
+                }
+
+                if (compressed_size > 0) {
+                    // Enhanced security validation for embedding LZ4 decompression
+                    const uint32_t MAX_EMBEDDING_DECOMPRESSED = 200 * 1024 * 1024; // 200MB limit for embeddings
+                    const uint32_t MAX_EMBEDDING_COMPRESSED = 150 * 1024 * 1024;   // 150MB limit for compressed
+
+                    if (uncompressed_size > MAX_EMBEDDING_DECOMPRESSED) {
+                        throw std::runtime_error("LZ4 decompression: Embedding uncompressed size too large (potential attack)");
+                    }
+                    if (compressed_size > MAX_EMBEDDING_COMPRESSED) {
+                        throw std::runtime_error("LZ4 decompression: Embedding compressed size too large (potential attack)");
+                    }
+                    if (uncompressed_size == 0) {
+                        throw std::runtime_error("LZ4 decompression: Invalid zero uncompressed size for embedding");
+                    }
+
+                    // Read compressed embedding data with validation
+                    std::vector<char> compressed_data(compressed_size);
+                    file.read(compressed_data.data(), compressed_size);
+
+                    if (!file.good() || file.gcount() != static_cast<std::streamsize>(compressed_size)) {
+                        throw std::runtime_error("LZ4 decompression: Failed to read embedding compressed data");
+                    }
+
+                    // Decompress with LZ4 (bounds-checked)
+                    int decompressed_size = LZ4_decompress_safe(
+                        compressed_data.data(),
+                        reinterpret_cast<char*>(model->embedding.data()),
+                        static_cast<int>(compressed_size),
+                        static_cast<int>(uncompressed_size));
+
+                    if (decompressed_size <= 0) {
+                        throw std::runtime_error("LZ4 decompression failed: Malformed embedding compressed data");
+                    }
+                    if (decompressed_size != static_cast<int>(uncompressed_size)) {
+                        throw std::runtime_error("LZ4 decompression failed: Embedding size mismatch");
+                    }
+                } else {
+                    // Uncompressed embedding data (fallback or old format) - read endian-safe floats
+                    for (size_t i = 0; i < embedding_size; i++) {
+                        if (!endian_utils::read_value(file, model->embedding[i])) {
+                            throw std::runtime_error("Failed to read embedding data");
+                        }
+                    }
+                }
+            }
+
+            // Read k-NN data (endian-safe)
             bool needs_knn;
-            file.read(reinterpret_cast<char*>(&needs_knn), sizeof(bool));
+            if (!endian_utils::read_value(file, needs_knn)) {
+                throw std::runtime_error("Failed to read k-NN flag");
+            }
 
             if (needs_knn) {
                 // k-NN data available for exact reproducibility
 
                 size_t indices_size, distances_size, weights_size;
-                file.read(reinterpret_cast<char*>(&indices_size), sizeof(size_t));
-                file.read(reinterpret_cast<char*>(&distances_size), sizeof(size_t));
-                file.read(reinterpret_cast<char*>(&weights_size), sizeof(size_t));
+                if (!endian_utils::read_value(file, indices_size) ||
+                    !endian_utils::read_value(file, distances_size) ||
+                    !endian_utils::read_value(file, weights_size)) {
+                    throw std::runtime_error("Failed to read k-NN sizes");
+                }
 
+                // Read k-NN indices (endian-safe)
                 if (indices_size > 0) {
                     model->nn_indices.resize(indices_size);
-                    file.read(reinterpret_cast<char*>(model->nn_indices.data()), indices_size * sizeof(int));
+                    for (size_t i = 0; i < indices_size; i++) {
+                        if (!endian_utils::read_value(file, model->nn_indices[i])) {
+                            throw std::runtime_error("Failed to read k-NN indices");
+                        }
+                    }
                 }
+                // Read k-NN distances (endian-safe)
                 if (distances_size > 0) {
                     model->nn_distances.resize(distances_size);
-                    file.read(reinterpret_cast<char*>(model->nn_distances.data()), distances_size * sizeof(float));
+                    for (size_t i = 0; i < distances_size; i++) {
+                        if (!endian_utils::read_value(file, model->nn_distances[i])) {
+                            throw std::runtime_error("Failed to read k-NN distances");
+                        }
+                    }
                 }
+                // Read k-NN weights (endian-safe)
                 if (weights_size > 0) {
                     model->nn_weights.resize(weights_size);
-                    file.read(reinterpret_cast<char*>(model->nn_weights.data()), weights_size * sizeof(float));
+                    for (size_t i = 0; i < weights_size; i++) {
+                        if (!endian_utils::read_value(file, model->nn_weights[i])) {
+                            throw std::runtime_error("Failed to read k-NN weights");
+                        }
+                    }
                 }
 
                 // k-NN fallback data loaded successfully
             }
 
-            // Read HNSW index
+            // Read quantization data (PQ - Product Quantization) (endian-safe)
+            if (!endian_utils::read_value(file, model->use_quantization) ||
+                !endian_utils::read_value(file, model->pq_m)) {
+                throw std::runtime_error("Failed to read quantization parameters");
+            }
+
+            if (model->use_quantization) {
+                // Read PQ codes
+                size_t pq_codes_size;
+                if (!endian_utils::read_value(file, pq_codes_size)) {
+                    throw std::runtime_error("Failed to read PQ codes size");
+                }
+                if (pq_codes_size > 0) {
+                    model->pq_codes.resize(pq_codes_size);
+                    // PQ codes are uint8_t - no endian conversion needed
+                    file.read(reinterpret_cast<char*>(model->pq_codes.data()), pq_codes_size * sizeof(uint8_t));
+                }
+
+                // Read PQ centroids (endian-safe)
+                size_t pq_centroids_size;
+                if (!endian_utils::read_value(file, pq_centroids_size)) {
+                    throw std::runtime_error("Failed to read PQ centroids size");
+                }
+                if (pq_centroids_size > 0) {
+                    model->pq_centroids.resize(pq_centroids_size);
+                    for (size_t i = 0; i < pq_centroids_size; i++) {
+                        if (!endian_utils::read_value(file, model->pq_centroids[i])) {
+                            throw std::runtime_error("Failed to read PQ centroids");
+                        }
+                    }
+                }
+            }
+
+            // Read HNSW index (endian-safe)
             size_t hnsw_size;
-            file.read(reinterpret_cast<char*>(&hnsw_size), sizeof(size_t));
+            if (!endian_utils::read_value(file, hnsw_size)) {
+                throw std::runtime_error("Failed to read HNSW size");
+            }
 
             if (hnsw_size > 0) {
                 // Starting HNSW reconstruction with saved parameters
@@ -404,11 +696,64 @@ namespace persistence_utils {
                     }
                 }
             }
+            else {
+                // No HNSW index saved - rebuild from quantized data if available
+                if (model->use_quantization && !model->pq_codes.empty() && !model->pq_centroids.empty()) {
+                    // WARNING: Reconstructing HNSW from lossy quantized data
+                    fprintf(stderr, "WARNING: Reconstructing HNSW index from lossy quantized data. "
+                                   "Transform results may differ slightly from original model.\n");
+                    try {
+                        // OPTIMIZATION: Rebuild HNSW index from PQ codes instead of storing it
+
+                        // Step 1: Initialize space factory
+                        if (!model->space_factory->create_space(model->metric, model->n_dim)) {
+                            throw std::runtime_error("Failed to create HNSW space for reconstruction");
+                        }
+
+                        // Step 2: Create new HNSW index
+                        model->ann_index = std::make_unique<hnswlib::HierarchicalNSW<float>>(
+                            model->space_factory->get_space(),
+                            model->n_vertices,
+                            model->hnsw_M,
+                            model->hnsw_ef_construction
+                        );
+                        model->ann_index->setEf(model->hnsw_ef_search);
+
+                        // Step 3: Reconstruct quantized data from PQ codes
+                        std::vector<float> reconstructed_data(model->n_vertices * model->n_dim);
+                        int subspace_dim = model->n_dim / model->pq_m;
+
+                        for (int i = 0; i < model->n_vertices; i++) {
+                            std::vector<float> reconstructed_point;
+                            pq_utils::reconstruct_vector(model->pq_codes, i, model->pq_m,
+                                                       model->pq_centroids, subspace_dim,
+                                                       reconstructed_point);
+
+                            // Copy to reconstructed data
+                            for (int d = 0; d < model->n_dim; d++) {
+                                reconstructed_data[i * model->n_dim + d] = reconstructed_point[d];
+                            }
+                        }
+
+                        // Step 4: Add all points to HNSW index
+                        for (int i = 0; i < model->n_vertices; i++) {
+                            model->ann_index->addPoint(&reconstructed_data[i * model->n_dim], i);
+                        }
+
+                        // HNSW index successfully reconstructed from PQ codes
+                    }
+                    catch (...) {
+                        // Reconstruction failed - continue without HNSW index
+                        model->ann_index = nullptr;
+                        send_warning_to_callback("HNSW index reconstruction from PQ codes failed");
+                    }
+                }
+                // else: No HNSW index and no quantization data - continue without index
+            }
 
             model->is_fitted = true;
             file.close();
 
-            debug_print_model_state(model, "LOAD");
 
             // Print HNSW save/load consistency summary
             // HNSW save/load consistency fixes applied:

@@ -17,4 +17,7 @@ namespace distance_metrics {
     // Unified distance computation based on metric type
     float compute_distance(const float* a, const float* b, int dim, UwotMetric metric);
 
+    // Data validation for metric-specific requirements
+    void validate_metric_data(const float* data, int n_obs, int n_dim, UwotMetric metric);
+
 }
